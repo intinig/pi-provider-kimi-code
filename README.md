@@ -4,7 +4,7 @@
 
 **Reuse your [Kimi Code Plan](https://www.kimi.com/code/docs/en/) inside [pi-coding-agent](https://pi.dev/)** — no separate API credits, no second billing dashboard. Every request draws from your Kimi Code membership quota (the 5-hour token bucket) instead of billing per-token on the Moonshot Open Platform.
 
-It's **"Claude Code for Kimi"** — log in with your Kimi account, with `KIMI_API_KEY` still supported as a fallback for CI. You get `kimi-for-coding` (the Kimi-k2.6 latest alias, backed by the same Kimi Code Plan that covers K2.6 and K2.5) with a 262K-token context window, automatic prompt caching, automatic large-image and video upload, and compatibility with both Anthropic-style and OpenAI-style clients.
+It's **"Claude Code for Kimi"** — log in with your Kimi account, with `KIMI_API_KEY` still supported as a fallback for CI. You get `kimi-for-coding` (the Kimi-k2.6 latest alias, backed by the same Kimi Code Plan that covers K2.6 and K2.5) with a 262K-token context window, automatic prompt caching, automatic large-image upload, and compatibility with both Anthropic-style and OpenAI-style clients.
 
 ## Why not the built-in `kimi-coding` provider?
 
@@ -25,9 +25,11 @@ Pay-per-token via `KIMI_API_KEY` also works if you just want to try Kimi in CI o
 ## Features
 
 - **Browser login with your Kimi account** — reuse your Kimi Code Membership without buying separate API credits. Credentials are stored locally and refreshed automatically. `KIMI_API_KEY` is also accepted for pay-per-token or CI use.
-- **262K-token context window** on all registered models.
+- **Reuses an existing `kimi-cli` session** — if you already signed in with the official `kimi-cli`, the extension picks up the token from `~/.kimi/credentials/kimi-code.json` and skips the device-code dance entirely.
+- **Live model metadata** — name, context window, and reasoning / image-input capabilities are refreshed from Kimi's `/v1/models` endpoint at every login / refresh, so server-side rollouts (e.g. expanded context) take effect without a provider release.
+- **262K-token context window** on the registered model (overridable; see [`docs/ENV.md`](docs/ENV.md)).
 - **Automatic prompt caching** — binds Kimi's prompt cache to your pi session so repeated calls hit the cache cheaply (observed TTL ~5-10 minutes). Honors pi's `PI_CACHE_RETENTION=none` if you want to disable caching entirely.
-- **Automatic large-image and video upload** — images over 1 MB and all videos are uploaded to Kimi ahead of time, so you don't hit inline payload limits.
+- **Automatic large-image upload** — images over 1 MB are uploaded to Kimi's `/v1/files` endpoint and referenced by `ms://` id, so you don't hit inline payload limits.
 - **Works with both Anthropic- and OpenAI-compatible modes** — use whichever one your pi setup expects.
 - **Stream cleaning** — Kimi occasionally leaks placeholder blocks into the stream during thinking phases; this extension catches and hides them so your pi UI stays clean.
 - **Zero dependencies, zero build step** — the extension loads directly as TypeScript, nothing to compile.
@@ -70,6 +72,10 @@ Inside `pi`, run:
 
 A browser tab opens, you sign into your Kimi account, and credentials are stored at `~/.pi/agent/auth.json`. Tokens refresh automatically.
 
+### Already logged in via `kimi-cli`?
+
+If `~/.kimi/credentials/kimi-code.json` exists (i.e. you previously signed in with the official `kimi-cli`), `/login kimi-coding` reads that file, refreshes the access token if needed, and finishes without opening a browser. The kimi-cli credential file is read-only from this extension's perspective — it is never overwritten. Set `KIMI_SHARE_DIR` to point at a non-default location.
+
 ### API key
 
 For CI or pay-per-token use, set `KIMI_API_KEY`:
@@ -80,9 +86,9 @@ KIMI_API_KEY=sk-... pi
 
 ## Models
 
-| ID                | Name            | Reasoning | Input              | Context | Max Output |
-| ----------------- | --------------- | --------- | ------------------ | ------- | ---------- |
-| `kimi-for-coding` | Kimi for Coding | yes       | text, image, video | 262 144 | 32 000     |
+| ID                | Name            | Reasoning | Input       | Context | Max Output |
+| ----------------- | --------------- | --------- | ----------- | ------- | ---------- |
+| `kimi-for-coding` | Kimi for Coding | yes       | text, image | 262 144 | 32 000     |
 
 `kimi-for-coding` is the latest alias on the Kimi Code Plan — today it points at Kimi-k2.6. The Plan itself still covers K2.5; the upstream routes older model IDs to the current alias, but this provider only publishes the canonical `kimi-for-coding` entry.
 
@@ -103,7 +109,7 @@ Select it inside `pi`:
 | `KIMI_CODE_UPLOAD_THRESHOLD_BYTES` | Image auto-upload threshold, default `1048576` (1 MB)  |
 | `KIMI_CODE_DEBUG`                  | Set to `1` to print provider-side debug logs           |
 
-Full list with defaults and the test-script variables: [docs/ENV.md](docs/ENV.md).
+Full list — including `kimi-cli`-compatible aliases (`KIMI_BASE_URL`, `KIMI_SHARE_DIR`) and model-override knobs (`KIMI_MODEL_NAME`, `KIMI_MODEL_CAPABILITIES`, `KIMI_MODEL_THINKING_KEEP`, ...) — lives in [docs/ENV.md](docs/ENV.md).
 
 ## FAQ
 
