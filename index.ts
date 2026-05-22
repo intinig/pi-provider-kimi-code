@@ -828,6 +828,130 @@ function normalizeOpenAIAssistantToolCalls(payload: JsonRecord): void {
   }
 }
 
+const JSON_SCHEMA_COMBINATOR_KEYS = new Set([
+  "anyOf",
+  "oneOf",
+  "allOf",
+  "not",
+  "if",
+  "then",
+  "else",
+  "$ref",
+]);
+
+const JSON_SCHEMA_OBJECT_KEYS = new Set([
+  "properties",
+  "additionalProperties",
+  "patternProperties",
+  "propertyNames",
+  "required",
+  "minProperties",
+  "maxProperties",
+]);
+const JSON_SCHEMA_ARRAY_KEYS = new Set([
+  "items",
+  "prefixItems",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "contains",
+]);
+const JSON_SCHEMA_STRING_KEYS = new Set(["minLength", "maxLength", "pattern", "format"]);
+const JSON_SCHEMA_NUMERIC_KEYS = new Set([
+  "minimum",
+  "maximum",
+  "multipleOf",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+]);
+
+function hasAnyKey(record: JsonRecord, keys: Set<string>): boolean {
+  return Object.keys(record).some((key) => keys.has(key));
+}
+
+function inferJsonSchemaTypeFromValues(values: unknown[]): string {
+  const inferred = new Set<string>();
+  for (const value of values) {
+    if (typeof value === "boolean") inferred.add("boolean");
+    else if (typeof value === "number") inferred.add(Number.isInteger(value) ? "integer" : "number");
+    else if (typeof value === "string") inferred.add("string");
+    else if (value === null) inferred.add("null");
+    else if (Array.isArray(value)) inferred.add("array");
+    else if (isRecord(value)) inferred.add("object");
+    else return "string";
+  }
+  if (inferred.size === 1) return [...inferred][0] ?? "string";
+  if (inferred.size === 2 && inferred.has("integer") && inferred.has("number")) return "number";
+  return "string";
+}
+
+function inferJsonSchemaTypeFromStructure(node: JsonRecord): string {
+  if (hasAnyKey(node, JSON_SCHEMA_OBJECT_KEYS)) return "object";
+  if (hasAnyKey(node, JSON_SCHEMA_ARRAY_KEYS)) return "array";
+  if (hasAnyKey(node, JSON_SCHEMA_STRING_KEYS)) return "string";
+  if (hasAnyKey(node, JSON_SCHEMA_NUMERIC_KEYS)) return "number";
+  return "string";
+}
+
+function normalizeJsonSchemaPropertyTypes(node: unknown): void {
+  if (!isRecord(node)) return;
+
+  if (
+    node.type === undefined &&
+    !Object.keys(node).some((key) => JSON_SCHEMA_COMBINATOR_KEYS.has(key))
+  ) {
+    if (Array.isArray(node.enum) && node.enum.length > 0) {
+      node.type = inferJsonSchemaTypeFromValues(node.enum);
+    } else if ("const" in node) {
+      node.type = inferJsonSchemaTypeFromValues([node.const]);
+    } else {
+      node.type = inferJsonSchemaTypeFromStructure(node);
+    }
+  }
+
+  recurseJsonSchemaPropertyTypes(node);
+}
+
+function recurseJsonSchemaPropertyTypes(node: unknown): void {
+  if (!isRecord(node)) return;
+
+  if (isRecord(node.properties)) {
+    for (const value of Object.values(node.properties)) {
+      normalizeJsonSchemaPropertyTypes(value);
+    }
+  }
+
+  if (isRecord(node.items)) {
+    normalizeJsonSchemaPropertyTypes(node.items);
+  } else if (Array.isArray(node.items)) {
+    for (const value of node.items) {
+      normalizeJsonSchemaPropertyTypes(value);
+    }
+  }
+
+  if (isRecord(node.additionalProperties)) {
+    normalizeJsonSchemaPropertyTypes(node.additionalProperties);
+  }
+
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    const branches = node[key];
+    if (!Array.isArray(branches)) continue;
+    for (const value of branches) {
+      normalizeJsonSchemaPropertyTypes(value);
+    }
+  }
+}
+
+function normalizeOpenAIToolSchemas(payload: JsonRecord): void {
+  if (!Array.isArray(payload.tools)) return;
+  for (const tool of payload.tools) {
+    if (!isRecord(tool) || !isRecord(tool.function)) continue;
+    const parameters = tool.function.parameters;
+    if (!isRecord(parameters)) continue;
+    recurseJsonSchemaPropertyTypes(parameters);
+  }
+}
+
 async function transformAnthropicPayloadFiles(
   payload: JsonRecord,
   upload: Uploader,
@@ -898,6 +1022,7 @@ export async function applyKimiPayloadMutations(
   }
   if (ctx.api === "openai-completions") {
     normalizeOpenAIAssistantToolCalls(payload);
+    normalizeOpenAIToolSchemas(payload);
   }
 
   // 3. prompt_cache_key injection. Respect any key already on the payload,

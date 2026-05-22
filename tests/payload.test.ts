@@ -105,6 +105,49 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(messages[0]?.content, undefined);
   });
 
+  it("fills missing OpenAI tool parameter schema types", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "search",
+            parameters: {
+              type: "object",
+              properties: {
+                mode: { enum: ["smart", "full"] },
+                limit: { minimum: 1 },
+                filters: {
+                  properties: {
+                    tag: { const: "code" },
+                  },
+                },
+                choice: {
+                  anyOf: [{ enum: ["a"] }, { enum: ["b"] }],
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    await applyKimiPayloadMutations(payload, baseCtx({ api: "openai-completions" }));
+
+    const tools = payload.tools as JsonRecord[];
+    const tool = tools[0] as JsonRecord;
+    const fn = tool.function as JsonRecord;
+    const parameters = fn.parameters as JsonRecord;
+    const properties = parameters.properties as Record<string, JsonRecord>;
+    assert.equal(properties.mode.type, "string");
+    assert.equal(properties.limit.type, "number");
+    assert.equal(properties.filters.type, "object");
+    const filtersProperties = properties.filters.properties as Record<string, JsonRecord>;
+    assert.equal(filtersProperties.tag.type, "string");
+    assert.equal(properties.choice.type, undefined);
+  });
+
   it("uploads inline base64 images in anthropic payloads and rewrites source type to 'url'", async () => {
     const upload = async () => "ms://anthropic-id";
     const payload: JsonRecord = {
