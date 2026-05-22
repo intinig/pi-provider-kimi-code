@@ -849,22 +849,30 @@ function streamSimpleKimi(
             )
           : streamSimpleAnthropic(model as Model<"anthropic-messages">, context, patchedOptions);
 
-      let pushedAny = false;
       let shouldRetry = false;
+      let prefixBuffer: AssistantMessageEvent[] = [];
 
       try {
         for await (const event of filterEmptyResponseStream(upstream)) {
-          // If the upstream terminates with an error before we've emitted
-          // anything downstream, speculatively try an OAuth refresh and
-          // retry once. This handles the common case of a server-side token
-          // invalidation before the local `expires` lapses, without having
-          // to pattern-match every possible error-message format.
-          //
-          // Non-auth errors (overflow, network, rate-limit, etc.) still
-          // trigger one wasted refresh, but the retried request fails the
-          // same way and we forward it — pi-coding-agent's own recovery
-          // paths (compaction, retry) take over from there.
-          if (!pushedAny && attempt === 0 && event.type === "error") {
+          // streamAnthropic emits a synthetic "start" event synchronously,
+          // before the for-await loop begins iterating and therefore before
+          // the HTTP request is actually made.  If the request 401s, the loop
+          // throws and the catch block emits "error".  Without buffering, the
+          // "start" event (which carries an empty AssistantMessage) leaks into
+          // the session history and the TUI, leaving a phantom empty assistant
+          // bubble.  We buffer "start" events and only flush them once we see
+          // a non-error event that proves the stream is alive.
+          if (event.type === "start") {
+            prefixBuffer.push(event);
+            continue;
+          }
+
+          // Speculative OAuth refresh on the first error.  We retry once so
+          // that short-lived Kimi tokens invalidated by the server before the
+          // local expires timestamp lapses don't surface as raw 401s to the
+          // user.  Non-auth errors still trigger one wasted refresh, but the
+          // retried request fails the same way and we forward it.
+          if (attempt === 0 && event.type === "error") {
             console.error(
               `[kimi-coding] upstream error on first event, attempting refresh: ${event.error?.errorMessage?.slice(0, 200)}`,
             );
@@ -873,26 +881,50 @@ function streamSimpleKimi(
               console.error("[kimi-coding] retrying stream with refreshed token");
               currentKey = refreshed;
               shouldRetry = true;
-              break;
+              break; // discard prefixBuffer — don't leak the stale start
             }
             console.error(
               "[kimi-coding] refresh did not yield a new token, forwarding original error",
             );
           }
+
+          // First non-start, non-retry event: flush buffered prefix, then
+          // stream normally.
+          for (const e of prefixBuffer) filtered.push(e);
+          prefixBuffer = [];
           filtered.push(event);
-          pushedAny = true;
         }
+
+        // Stream ended normally: flush any remaining buffered starts.
+        for (const e of prefixBuffer) filtered.push(e);
       } catch (err) {
+        // Upstream threw rather than emitting a stream `error` event. This can
+        // be the same stale-token 401 surfaced as an exception (depending on
+        // the SDK path / network layer), so mirror the in-stream refresh
+        // branch: on attempt 0, try one OAuth refresh + retry. Either way,
+        // discard `prefixBuffer` — we never confirmed the stream actually
+        // started, and flushing the buffered `start` would resurrect the
+        // phantom empty assistant message this PR set out to fix.
         console.error("[kimi-coding] stream error:", err);
-        filtered.push({
-          type: "error",
-          reason: "error",
-          error: {
-            content: [],
-            stopReason: "error",
-            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-          },
-        } as AssistantMessageEvent & { type: "error" });
+        if (attempt === 0) {
+          const refreshed = await refreshKimiAuthToken(currentKey);
+          if (refreshed && refreshed !== currentKey) {
+            console.error("[kimi-coding] retrying stream after thrown error with refreshed token");
+            currentKey = refreshed;
+            shouldRetry = true;
+          }
+        }
+        if (!shouldRetry) {
+          filtered.push({
+            type: "error",
+            reason: "error",
+            error: {
+              content: [],
+              stopReason: "error",
+              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+            },
+          } as AssistantMessageEvent & { type: "error" });
+        }
       }
 
       if (shouldRetry) {
