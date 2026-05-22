@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
-import { asciiHeaderValue, buildModelsUrl, getOsVersion } from "../index.ts";
+import { asciiHeaderValue, getOsVersion } from "../src/device.ts";
+import { buildModelsUrl } from "../src/models.ts";
 
 describe("asciiHeaderValue", () => {
   it("passes ASCII strings through unchanged", () => {

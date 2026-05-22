@@ -1,13 +1,12 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { DEFAULT_KIMI_MODEL_INPUT } from "../src/constants.ts";
 import {
-  DEFAULT_KIMI_MODEL_INPUT,
   applyKimiEnvOverridesToModel,
   applyKimiOAuthExtrasToModel,
   discoverKimiModelMetadata,
-  isKimiAuthErrorMessage,
-  refreshAccessToken,
-} from "../index.ts";
+} from "../src/models.ts";
+import { isKimiAuthErrorMessage, refreshAccessToken } from "../src/oauth.ts";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 type FetchCall = { url: string; init?: RequestInit };

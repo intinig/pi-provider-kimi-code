@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import {
   applyKimiPayloadMutations,
-  filterEmptyResponseStream,
   type JsonRecord,
   type KimiPayloadContext,
-} from "../index.ts";
+} from "../src/payload.ts";
+import { filterEmptyResponseStream } from "../src/stream.ts";
 
 const baseCtx = (overrides: Partial<KimiPayloadContext> = {}): KimiPayloadContext => ({
   api: "anthropic-messages",

@@ -36,6 +36,7 @@
   "author": "Leechael",
   "files": [
     "index.ts",
+    "src",
     "package.json",
     "README.md"
   ],

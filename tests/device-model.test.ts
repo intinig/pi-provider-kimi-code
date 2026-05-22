@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { computeDeviceModel } from "../index.ts";
+import { computeDeviceModel } from "../src/device.ts";
 
 // Mirror upstream kimi-cli `_device_model()` formatting per OS so that the
 // X-Msh-Device-Model header reported by this provider stays in lockstep with
