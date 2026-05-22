@@ -85,7 +85,6 @@ describe("discoverKimiModelMetadata", () => {
             context_length: 262144,
             supports_reasoning: true,
             supports_image_in: true,
-            supports_video_in: true,
           },
         ],
       }),
@@ -97,7 +96,6 @@ describe("discoverKimiModelMetadata", () => {
     assert.equal(result.contextLength, 262144);
     assert.equal(result.supportsReasoning, true);
     assert.equal(result.supportsImageIn, true);
-    assert.equal(result.supportsVideoIn, true);
   });
 
   it("falls back to the first entry when no kimi-for-coding is present", async () => {
@@ -190,20 +188,19 @@ describe("applyKimiOAuthExtrasToModel", () => {
       contextLength: 1048576,
       supportsReasoning: true,
       supportsImageIn: true,
-      supportsVideoIn: true,
     }) as Model<Api> & { wireModelId?: string; input: string[] };
 
     assert.equal(result.name, "Kimi K2 Next");
     assert.equal(result.contextWindow, 1048576);
     assert.equal(result.wireModelId, "kimi-k2-next");
     assert.equal(result.reasoning, true);
-    assert.deepEqual(result.input, ["text", "image", "video"]);
+    assert.deepEqual(result.input, ["text", "image"]);
   });
 });
 
 describe("DEFAULT_KIMI_MODEL_INPUT", () => {
-  it("advertises text, image, and video input by default", () => {
-    assert.deepEqual([...DEFAULT_KIMI_MODEL_INPUT], ["text", "image", "video"]);
+  it("advertises text and image input by default", () => {
+    assert.deepEqual([...DEFAULT_KIMI_MODEL_INPUT], ["text", "image"]);
   });
 });
 
@@ -236,7 +233,7 @@ describe("applyKimiEnvOverridesToModel", () => {
     assert.equal(result.wireModelId, "kimi-k2-custom");
     assert.equal(result.contextWindow, 1048576);
     assert.equal(result.reasoning, true);
-    assert.deepEqual(result.input, ["text", "image", "video"]);
+    assert.deepEqual(result.input, ["text", "image"]);
   });
 
   it("maps official capabilities exactly when provided", () => {

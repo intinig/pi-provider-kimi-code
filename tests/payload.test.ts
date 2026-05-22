@@ -91,6 +91,37 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(imageUrl.url, "ms://abc123");
   });
 
+  it("does not treat OpenAI video_url blocks as uploadable content", async () => {
+    let invocations = 0;
+    const upload = async () => {
+      invocations++;
+      return "ms://video-id";
+    };
+
+    const payload: JsonRecord = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "video_url",
+              video_url: { url: "data:video/mp4;base64,AAAA" },
+            },
+          ],
+        },
+      ],
+    };
+
+    await applyKimiPayloadMutations(payload, baseCtx({ api: "openai-completions", upload }));
+
+    assert.equal(invocations, 0);
+    const messages = payload.messages as JsonRecord[];
+    const content = messages[0]?.content as JsonRecord[];
+    const block = content[0] as JsonRecord;
+    const videoUrl = block.video_url as JsonRecord;
+    assert.equal(videoUrl.url, "data:video/mp4;base64,AAAA");
+  });
+
   it("drops empty assistant content when OpenAI tool calls are present", async () => {
     const payload: JsonRecord = {
       messages: [

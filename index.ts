@@ -54,7 +54,7 @@ const KIMI_CLI_VERSION = "1.44.0";
 const KIMI_CLI_USER_AGENT = `KimiCLI/${KIMI_CLI_VERSION}`;
 const KIMI_PLATFORM = "kimi_cli";
 const DEVICE_ID_PATH = join(os.homedir(), ".pi", "providers", "kimi-coding", "device_id");
-export const DEFAULT_KIMI_MODEL_INPUT = ["text", "image", "video"] as const;
+export const DEFAULT_KIMI_MODEL_INPUT = ["text", "image"] as const;
 const RETRYABLE_REFRESH_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 // =============================================================================
@@ -398,7 +398,6 @@ export interface KimiOAuthExtras {
   contextLength?: number;
   supportsReasoning?: boolean;
   supportsImageIn?: boolean;
-  supportsVideoIn?: boolean;
 }
 
 export type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
@@ -409,7 +408,6 @@ interface KimiServerModel {
   context_length?: unknown;
   supports_reasoning?: unknown;
   supports_image_in?: unknown;
-  supports_video_in?: unknown;
 }
 
 export function buildModelsUrl(baseUrl: string): string {
@@ -448,9 +446,6 @@ export async function discoverKimiModelMetadata(accessToken: string): Promise<Ki
     if (typeof preferred.supports_image_in === "boolean") {
       extras.supportsImageIn = preferred.supports_image_in;
     }
-    if (typeof preferred.supports_video_in === "boolean") {
-      extras.supportsVideoIn = preferred.supports_video_in;
-    }
     return extras;
   } catch {
     return {};
@@ -474,10 +469,9 @@ export function applyKimiOAuthExtrasToModel(
   if (typeof extras.supportsReasoning === "boolean") {
     next.reasoning = extras.supportsReasoning;
   }
-  if (typeof extras.supportsImageIn === "boolean" || typeof extras.supportsVideoIn === "boolean") {
+  if (typeof extras.supportsImageIn === "boolean") {
     const input = ["text"];
     if (extras.supportsImageIn) input.push("image");
-    if (extras.supportsVideoIn) input.push("video");
     (next as unknown as { input: string[] }).input = input;
   }
   return next;
@@ -494,7 +488,6 @@ function parseKimiModelCapabilities(value: string | undefined): KimiOAuthExtras 
   return {
     supportsReasoning: caps.has("thinking") || caps.has("always_thinking"),
     supportsImageIn: caps.has("image_in"),
-    supportsVideoIn: caps.has("video_in"),
   };
 }
 
@@ -738,10 +731,8 @@ function getUploadFilename(mimeType: string): string {
     "image/png": "upload.png",
     "image/gif": "upload.gif",
     "image/webp": "upload.webp",
-    "video/mp4": "upload.mp4",
-    "video/quicktime": "upload.mov",
   };
-  return map[mimeType] ?? (mimeType.startsWith("video/") ? "upload.mp4" : "upload.bin");
+  return map[mimeType] ?? "upload.bin";
 }
 
 function readEnvOverrides(): KimiEnvOverrides {
@@ -765,14 +756,14 @@ async function uploadKimiFile(
   data: string,
 ): Promise<string | null> {
   const buffer = Buffer.from(data, "base64");
-  const isVideo = mimeType.startsWith("video/");
+  if (!mimeType.startsWith("image/")) return null;
   const threshold = parseInlineUploadThreshold(process.env.KIMI_CODE_UPLOAD_THRESHOLD_BYTES);
-  if (!isVideo && buffer.length <= threshold) return null;
+  if (buffer.length <= threshold) return null;
 
   const filename = getUploadFilename(mimeType);
   const formData = new FormData();
   formData.append("file", new Blob([buffer], { type: mimeType }), filename);
-  formData.append("purpose", isVideo ? "video" : "image");
+  formData.append("purpose", "image");
 
   const baseUrl = process.env.KIMI_CODE_BASE_URL || DEFAULT_BASE_URL;
   const uploadUrl = `${deriveFilesBaseUrl(baseUrl)}/files`;
@@ -805,7 +796,7 @@ async function uploadKimiFile(
 // Payload file transformers (pure given an Uploader)
 // =============================================================================
 // These walk the provider-specific payload shape and replace inline base64
-// image/video blocks with ms:// references returned by the injected uploader.
+// image blocks with ms:// references returned by the injected uploader.
 // They take an Uploader rather than an apiKey so they can be unit-tested with
 // a fake uploader; all network I/O stays behind that boundary.
 
@@ -818,8 +809,7 @@ async function transformOpenAIPayloadFiles(payload: JsonRecord, upload: Uploader
 
     for (const block of message.content) {
       if (!isRecord(block)) continue;
-      const key =
-        block.type === "image_url" ? "image_url" : block.type === "video_url" ? "video_url" : null;
+      const key = block.type === "image_url" ? "image_url" : null;
       if (!key) continue;
 
       const field = block[key];
