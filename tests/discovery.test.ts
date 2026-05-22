@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_KIMI_MODEL_INPUT,
+  applyKimiEnvOverridesToModel,
   applyKimiOAuthExtrasToModel,
   discoverKimiModelMetadata,
   isKimiAuthErrorMessage,
@@ -44,6 +45,10 @@ afterEach(() => {
 
 beforeEach(() => {
   delete process.env.KIMI_CODE_BASE_URL;
+  delete process.env.KIMI_BASE_URL;
+  delete process.env.KIMI_MODEL_NAME;
+  delete process.env.KIMI_MODEL_MAX_CONTEXT_SIZE;
+  delete process.env.KIMI_MODEL_CAPABILITIES;
 });
 
 describe("discoverKimiModelMetadata", () => {
@@ -141,6 +146,27 @@ describe("discoverKimiModelMetadata", () => {
     await discoverKimiModelMetadata("tok-1");
     assert.equal(mock.calls[0]?.url, "https://proxy.example.com/kimi/v1/models");
   });
+
+  it("accepts official KIMI_BASE_URL as a base URL alias", async () => {
+    process.env.KIMI_BASE_URL = "https://official.example.com/kimi";
+    mock = mockFetch(() =>
+      jsonResponse({ data: [{ id: "kimi-for-coding", context_length: 100 }] }),
+    );
+
+    await discoverKimiModelMetadata("tok-1");
+    assert.equal(mock.calls[0]?.url, "https://official.example.com/kimi/v1/models");
+  });
+
+  it("keeps KIMI_CODE_BASE_URL precedence over KIMI_BASE_URL", async () => {
+    process.env.KIMI_CODE_BASE_URL = "https://code.example.com/kimi";
+    process.env.KIMI_BASE_URL = "https://official.example.com/kimi";
+    mock = mockFetch(() =>
+      jsonResponse({ data: [{ id: "kimi-for-coding", context_length: 100 }] }),
+    );
+
+    await discoverKimiModelMetadata("tok-1");
+    assert.equal(mock.calls[0]?.url, "https://code.example.com/kimi/v1/models");
+  });
 });
 
 describe("applyKimiOAuthExtrasToModel", () => {
@@ -178,6 +204,61 @@ describe("applyKimiOAuthExtrasToModel", () => {
 describe("DEFAULT_KIMI_MODEL_INPUT", () => {
   it("advertises text, image, and video input by default", () => {
     assert.deepEqual([...DEFAULT_KIMI_MODEL_INPUT], ["text", "image", "video"]);
+  });
+});
+
+describe("applyKimiEnvOverridesToModel", () => {
+  it("applies official Kimi model env overrides to the registered model", () => {
+    process.env.KIMI_MODEL_NAME = "kimi-k2-custom";
+    process.env.KIMI_MODEL_MAX_CONTEXT_SIZE = "1048576";
+    process.env.KIMI_MODEL_CAPABILITIES = "thinking,image_in,video_in";
+
+    const model: Model<Api> = {
+      id: "kimi-for-coding",
+      name: "Kimi for Coding",
+      provider: "kimi-coding",
+      api: "kimi-openai-completions" as Api,
+      baseUrl: "https://api.kimi.com/coding/v1",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+    };
+
+    const result = applyKimiEnvOverridesToModel(model) as Model<Api> & {
+      wireModelId?: string;
+      input: string[];
+    };
+
+    assert.equal(result.id, "kimi-for-coding");
+    assert.equal(result.name, "kimi-k2-custom");
+    assert.equal(result.wireModelId, "kimi-k2-custom");
+    assert.equal(result.contextWindow, 1048576);
+    assert.equal(result.reasoning, true);
+    assert.deepEqual(result.input, ["text", "image", "video"]);
+  });
+
+  it("maps official capabilities exactly when provided", () => {
+    process.env.KIMI_MODEL_CAPABILITIES = "image_in";
+
+    const model: Model<Api> = {
+      id: "kimi-for-coding",
+      name: "Kimi for Coding",
+      provider: "kimi-coding",
+      api: "kimi-openai-completions" as Api,
+      baseUrl: "https://api.kimi.com/coding/v1",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+    };
+
+    const result = applyKimiEnvOverridesToModel(model) as Model<Api> & { input: string[] };
+
+    assert.equal(result.reasoning, false);
+    assert.deepEqual(result.input, ["text", "image"]);
   });
 });
 

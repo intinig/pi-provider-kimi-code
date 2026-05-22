@@ -68,7 +68,7 @@ function getOAuthHost(): string {
 }
 
 function getBaseUrl(): string {
-  const value = process.env.KIMI_CODE_BASE_URL || DEFAULT_BASE_URL;
+  const value = process.env.KIMI_CODE_BASE_URL || process.env.KIMI_BASE_URL || DEFAULT_BASE_URL;
   return value.trim() || DEFAULT_BASE_URL;
 }
 
@@ -457,7 +457,10 @@ export async function discoverKimiModelMetadata(accessToken: string): Promise<Ki
   }
 }
 
-export function applyKimiOAuthExtrasToModel(model: Model<Api>, extras: KimiOAuthExtras): Model<Api> {
+export function applyKimiOAuthExtrasToModel(
+  model: Model<Api>,
+  extras: KimiOAuthExtras,
+): Model<Api> {
   const next: Model<Api> & { wireModelId?: string } = { ...model };
   if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
     next.name = extras.modelDisplay;
@@ -471,16 +474,50 @@ export function applyKimiOAuthExtrasToModel(model: Model<Api>, extras: KimiOAuth
   if (typeof extras.supportsReasoning === "boolean") {
     next.reasoning = extras.supportsReasoning;
   }
-  if (
-    typeof extras.supportsImageIn === "boolean" ||
-    typeof extras.supportsVideoIn === "boolean"
-  ) {
+  if (typeof extras.supportsImageIn === "boolean" || typeof extras.supportsVideoIn === "boolean") {
     const input = ["text"];
     if (extras.supportsImageIn) input.push("image");
     if (extras.supportsVideoIn) input.push("video");
     (next as unknown as { input: string[] }).input = input;
   }
   return next;
+}
+
+function parseKimiModelCapabilities(value: string | undefined): KimiOAuthExtras | null {
+  if (!value) return null;
+  const caps = new Set(
+    value
+      .split(",")
+      .map((cap) => cap.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return {
+    supportsReasoning: caps.has("thinking") || caps.has("always_thinking"),
+    supportsImageIn: caps.has("image_in"),
+    supportsVideoIn: caps.has("video_in"),
+  };
+}
+
+export function applyKimiEnvOverridesToModel(model: Model<Api>): Model<Api> {
+  const extras: KimiOAuthExtras = {};
+  const modelName = process.env.KIMI_MODEL_NAME?.trim();
+  if (modelName) {
+    extras.wireModelId = modelName;
+    extras.modelDisplay = modelName;
+  }
+
+  const maxContextSize = process.env.KIMI_MODEL_MAX_CONTEXT_SIZE?.trim();
+  if (maxContextSize) {
+    const parsed = parseInt(maxContextSize, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      extras.contextLength = parsed;
+    }
+  }
+
+  const capabilities = parseKimiModelCapabilities(process.env.KIMI_MODEL_CAPABILITIES);
+  if (capabilities) Object.assign(extras, capabilities);
+
+  return applyKimiOAuthExtrasToModel(model, extras);
 }
 
 // =============================================================================
@@ -873,7 +910,8 @@ function inferJsonSchemaTypeFromValues(values: unknown[]): string {
   const inferred = new Set<string>();
   for (const value of values) {
     if (typeof value === "boolean") inferred.add("boolean");
-    else if (typeof value === "number") inferred.add(Number.isInteger(value) ? "integer" : "number");
+    else if (typeof value === "number")
+      inferred.add(Number.isInteger(value) ? "integer" : "number");
     else if (typeof value === "string") inferred.add("string");
     else if (value === null) inferred.add("null");
     else if (Array.isArray(value)) inferred.add("array");
@@ -1404,7 +1442,7 @@ export default function (pi: ExtensionAPI) {
     headers: getCommonHeaders(),
 
     models: [
-      {
+      applyKimiEnvOverridesToModel({
         id: "kimi-for-coding",
         name: "Kimi for Coding",
         reasoning: true,
@@ -1412,7 +1450,7 @@ export default function (pi: ExtensionAPI) {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 262144,
         maxTokens: 32000,
-      },
+      } as Model<Api>),
     ],
 
     oauth: {
@@ -1429,7 +1467,7 @@ export default function (pi: ExtensionAPI) {
         const extras = cred as KimiOAuthCredentials;
         return models.map((model) => {
           if (model.id !== "kimi-for-coding") return model;
-          return applyKimiOAuthExtrasToModel(model, extras);
+          return applyKimiEnvOverridesToModel(applyKimiOAuthExtrasToModel(model, extras));
         });
       },
     },
