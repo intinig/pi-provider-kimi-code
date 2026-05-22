@@ -66,25 +66,6 @@ jobs:
           echo "Publishing with tag: $NPM_TAG"
           npm publish --access public --tag "$NPM_TAG" --provenance
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          source release-naming.env
-          current_tag="${RELEASE_TAG}"
-          previous_tag=$(git tag -l "${TAG_PREFIX}*" --sort=-version:refname | grep -v "^${current_tag}$" | head -n 1 || true)
-
-          {
-            echo "## ${current_tag}"
-            echo
-            if [ -n "${previous_tag}" ]; then
-              echo "Changes since ${previous_tag}:"
-              echo
-              git log --pretty='- %s (%h)' "${previous_tag}..${current_tag}"
-            else
-              echo "Initial release"
-            fi
-          } > /tmp/changelog.md
-
       - name: Create release tarball
         run: |
           npm pack
@@ -100,7 +81,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          body_path: /tmp/changelog.md
+          generate_release_notes: true
           files: pi-provider-kimi-code.tar.gz
 
       - name: Publish summary

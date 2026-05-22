@@ -23,14 +23,14 @@ import type {
   Model,
   SimpleStreamOptions,
   ThinkingLevel,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import {
   streamSimpleAnthropic,
   streamSimpleOpenAICompletions,
   AssistantMessageEventStream,
-} from "@mariozechner/pi-ai";
-import type { ExtensionAPI, OAuthCredential } from "@mariozechner/pi-coding-agent";
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-ai";
+import type { ExtensionAPI, OAuthCredential } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
 // =============================================================================
 // Constants
@@ -42,7 +42,8 @@ const PROTOCOL =
   process.env.KIMI_CODE_PROTOCOL === "openai" ? "openai-completions" : "anthropic-messages";
 // Use a custom api identifier so this provider never conflicts with the
 // built-in "anthropic-messages" or "openai-completions" stream handlers.
-const KIMI_API_TYPE = PROTOCOL === "openai-completions" ? "kimi-openai-completions" : "kimi-anthropic-messages";
+const KIMI_API_TYPE =
+  PROTOCOL === "openai-completions" ? "kimi-openai-completions" : "kimi-anthropic-messages";
 const DEFAULT_BASE_URL =
   PROTOCOL === "openai-completions"
     ? "https://api.kimi.com/coding/v1"

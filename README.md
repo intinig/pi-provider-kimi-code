@@ -6,6 +6,14 @@
 
 It's **"Claude Code for Kimi"** — log in with your Kimi account, with `KIMI_API_KEY` still supported as a fallback for CI. You get `kimi-for-coding` (the Kimi-k2.6 latest alias, backed by the same Kimi Code Plan that covers K2.6 and K2.5) with a 262K-token context window, automatic prompt caching, automatic large-image and video upload, and compatibility with both Anthropic-style and OpenAI-style clients.
 
+## Why not the built-in `kimi-coding` provider?
+
+pi-coding-agent already ships a built-in `kimi-coding` provider (see [`pi.dev/docs/.../providers`](https://pi.dev/docs/latest/providers)). It works, but it's a thin generic Anthropic-protocol binding to `api.kimi.com/coding`. Three concrete things you lose by using it:
+
+- **Kimi server-side prompt cache never hits.** The built-in provider only emits Anthropic's standard `cache_control` markers, which the Kimi server does not honor. This extension injects `prompt_cache_key` (Kimi's native session-cache field) so cache reads on the Coding Plan actually fire. Without it, every turn pays full prompt cost.
+- **Images and videos are inlined as base64.** The built-in provider has no integration with Kimi's `/files` upload endpoint, so multimedia is sent inline as base64 in `messages`, counted toward your token budget and capped by request-size limits. This extension uploads images over `KIMI_CODE_UPLOAD_THRESHOLD_BYTES` (default 1 MB) and all videos to `/files`, references them by `ms://` id, and pays only the file-storage cost instead of token cost.
+- **OpenAI-compatible mode of the Coding endpoint is not exposed.** The built-in `kimi-coding` provider is Anthropic-only on `api.kimi.com/coding`. Kimi For Coding also serves an OpenAI-compatible variant at `api.kimi.com/coding/v1` — useful when something in your toolchain expects `role: "tool"` semantics, or when working around the [tool_result misread issue](https://github.com/Leechael/pi-provider-kimi-code/issues/5) under the Anthropic protocol. Opt in with `KIMI_CODE_PROTOCOL=openai`. (Note: the `moonshotai` / `moonshotai-cn` providers in pi-mono are a different product — Moonshot's pay-per-token Open Platform, not the Coding Plan.)
+
 ## Who is this for?
 
 - You already pay for a **[Kimi Code Plan](https://www.kimi.com/code/docs/en/)** and want to use it inside `pi-coding-agent` instead of the official `kimi-cli` — see [MoonshotAI/kimi-cli#757](https://github.com/MoonshotAI/kimi-cli/issues/757) for the canonical feature request this extension answers.
