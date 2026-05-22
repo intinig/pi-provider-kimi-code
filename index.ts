@@ -110,43 +110,60 @@ function getMacOSVersion(): string {
   }
 }
 
-function getDeviceModel(): string {
-  const platform = process.platform;
-  const arch = os.machine() || process.arch;
+// Normalize Node's lower-case `process.platform` (`linux`, `freebsd`,
+// `sunos`...) to Python `platform.system()` casing used by upstream kimi-cli.
+const SYSTEM_NAME: Record<string, string> = {
+  aix: "AIX",
+  freebsd: "FreeBSD",
+  linux: "Linux",
+  openbsd: "OpenBSD",
+  sunos: "SunOS",
+};
+
+export interface DeviceModelInput {
+  platform: NodeJS.Platform;
+  release: string;
+  arch: string;
+  /** macOS productVersion (e.g. "15.2"). Required only on darwin. */
+  macVersion?: string;
+}
+
+// Pure function exposed for tests. Mirror of upstream kimi-cli's
+// `_device_model()` in `src/kimi_cli/auth/oauth.py`.
+export function computeDeviceModel(input: DeviceModelInput): string {
+  const { platform, release, arch, macVersion } = input;
   if (platform === "darwin") {
-    const version = getMacOSVersion();
+    const version = macVersion || release;
     return version && arch ? `macOS ${version} ${arch}` : `macOS ${arch}`;
   }
   if (platform === "win32") {
     // Only show the major release (e.g. "Windows 10", "Windows 11") to match
-    // the upstream kimi-cli behavior in `def _device_model() -> str:`.
-    // See: https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/oauth.py
-    const parts = os.release().split(".");
-    let release = parts[0];
-    if (release === "10" && parts.length >= 3) {
+    // the upstream behavior. Windows 11 still reports kernel version
+    // "10.0.xxxxx"; treat build ≥ 22000 as Windows 11.
+    const parts = release.split(".");
+    let label = parts[0];
+    if (label === "10" && parts.length >= 3) {
       const build = parseInt(parts[2], 10);
       if (!isNaN(build) && build >= 22000) {
-        release = "11";
+        label = "11";
       }
     }
-    return release && arch ? `Windows ${release} ${arch}` : `Windows ${arch}`;
+    return label && arch ? `Windows ${label} ${arch}` : `Windows ${arch}`;
   }
-  // Normalize platform name to match Python `platform.system()` casing used by
-  // upstream kimi-cli (e.g. "Linux", "FreeBSD", "SunOS"), since Node's
-  // `process.platform` is always lower-case.
-  const SYSTEM_NAME: Record<string, string> = {
-    aix: "AIX",
-    freebsd: "FreeBSD",
-    linux: "Linux",
-    openbsd: "OpenBSD",
-    sunos: "SunOS",
-  };
   const system = SYSTEM_NAME[platform] ?? platform;
-  const release = os.release();
   return release && arch ? `${system} ${release} ${arch}` : `${system} ${arch}`;
 }
 
-function asciiHeaderValue(value: string, fallback = "unknown"): string {
+function getDeviceModel(): string {
+  return computeDeviceModel({
+    platform: process.platform,
+    release: os.release(),
+    arch: os.machine() || process.arch,
+    macVersion: process.platform === "darwin" ? getMacOSVersion() : undefined,
+  });
+}
+
+export function asciiHeaderValue(value: string, fallback = "unknown"): string {
   const trimmed = value.trim();
   /* oxlint-disable-next-line no-control-regex */
   if (/^[\x00-\x7F]*$/.test(trimmed)) {
@@ -329,13 +346,13 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> 
 // new release. Failures are non-fatal: discovery only enriches credentials.
 // =============================================================================
 
-interface KimiOAuthExtras {
+export interface KimiOAuthExtras {
   wireModelId?: string;
   modelDisplay?: string;
   contextLength?: number;
 }
 
-type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
+export type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
 
 interface KimiServerModel {
   id?: unknown;
@@ -343,12 +360,16 @@ interface KimiServerModel {
   context_length?: unknown;
 }
 
-function getModelsUrl(): string {
-  const base = getBaseUrl().replace(/\/+$/, "");
+export function buildModelsUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
   return base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
 }
 
-async function discoverKimiModelMetadata(accessToken: string): Promise<KimiOAuthExtras> {
+function getModelsUrl(): string {
+  return buildModelsUrl(getBaseUrl());
+}
+
+export async function discoverKimiModelMetadata(accessToken: string): Promise<KimiOAuthExtras> {
   if (!accessToken) return {};
   try {
     const response = await fetch(getModelsUrl(), {
@@ -457,10 +478,10 @@ async function refreshKimiCodeToken(credentials: OAuthCredentials): Promise<Kimi
 const EMPTY_RESPONSE_PREFIX = "(Empty response:";
 const DEFAULT_KIMI_INLINE_UPLOAD_THRESHOLD_BYTES = 1 * 1024 * 1024;
 
-type JsonRecord = Record<string, unknown>;
-type Uploader = (mimeType: string, data: string) => Promise<string | null>;
+export type JsonRecord = Record<string, unknown>;
+export type Uploader = (mimeType: string, data: string) => Promise<string | null>;
 
-interface KimiEnvOverrides {
+export interface KimiEnvOverrides {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
@@ -472,7 +493,7 @@ function resolveCacheRetention(value?: CacheRetention): CacheRetention {
   return "short";
 }
 
-interface KimiPayloadContext {
+export interface KimiPayloadContext {
   api: "anthropic-messages" | "openai-completions";
   upload?: Uploader;
   cacheKey?: string;
@@ -672,7 +693,7 @@ async function transformAnthropicPayloadFiles(
 // every side effect enters via ctx.upload or pre-read values in ctx.
 // This makes the five steps below testable with fixture payloads.
 
-async function applyKimiPayloadMutations(
+export async function applyKimiPayloadMutations(
   payload: JsonRecord,
   ctx: KimiPayloadContext,
 ): Promise<void> {
