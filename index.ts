@@ -135,7 +135,9 @@ export function computeDeviceModel(input: DeviceModelInput): string {
   const { platform, release, arch, macVersion } = input;
   if (platform === "darwin") {
     const version = macVersion || release;
-    return version && arch ? `macOS ${version} ${arch}` : `macOS ${arch}`;
+    if (version && arch) return `macOS ${version} ${arch}`;
+    if (version) return `macOS ${version}`;
+    return `macOS ${arch}`.trim();
   }
   if (platform === "win32") {
     // Only show the major release (e.g. "Windows 10", "Windows 11") to match
@@ -149,10 +151,14 @@ export function computeDeviceModel(input: DeviceModelInput): string {
         label = "11";
       }
     }
-    return label && arch ? `Windows ${label} ${arch}` : `Windows ${arch}`;
+    if (label && arch) return `Windows ${label} ${arch}`;
+    if (label) return `Windows ${label}`;
+    return `Windows ${arch}`.trim();
   }
   const system = SYSTEM_NAME[platform] ?? platform;
-  return release && arch ? `${system} ${release} ${arch}` : `${system} ${arch}`;
+  if (release && arch) return `${system} ${release} ${arch}`;
+  if (release) return `${system} ${release}`;
+  return `${system} ${arch}`.trim();
 }
 
 function getDeviceModel(): string {
