@@ -43,7 +43,7 @@
   "scripts": {
     "clean": "echo 'nothing to clean'",
     "build": "echo 'nothing to build'",
-    "check": "echo 'nothing to check'",
+    "check": "tsc --noEmit",
     "lint": "oxlint .",
     "format": "oxfmt . --write",
     "format:check": "oxfmt . --check",
@@ -55,8 +55,10 @@
   },
   "devDependencies": {
     "@j178/prek": "^0.3.8",
+    "@types/node": "^24.0.0",
     "oxfmt": "^0.44.0",
-    "oxlint": "^1.59.0"
+    "oxlint": "^1.59.0",
+    "typescript": "^5.9.0"
   },
   "pi": {
     "extensions": [

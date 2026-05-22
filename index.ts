@@ -15,9 +15,11 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import os from "node:os";
 import { dirname, join } from "node:path";
 import type {
+  Api,
   OAuthCredentials,
   OAuthLoginCallbacks,
   AssistantMessageEvent,
+  AssistantMessageEventStream,
   CacheRetention,
   Context,
   Model,
@@ -27,7 +29,7 @@ import type {
 import {
   streamSimpleAnthropic,
   streamSimpleOpenAICompletions,
-  AssistantMessageEventStream,
+  createAssistantMessageEventStream,
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, OAuthCredential } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
@@ -792,11 +794,11 @@ async function refreshKimiAuthToken(currentKey: string): Promise<string | null> 
 // fallback; the actual logic lives in the pure units above.
 
 function streamSimpleKimi(
-  model: Model<"anthropic-messages" | "openai-completions">,
+  model: Model<Api>,
   context: Context,
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
-  const filtered = new AssistantMessageEventStream();
+  const filtered = createAssistantMessageEventStream();
   const initialKey = options?.apiKey || process.env.KIMI_API_KEY || "";
 
   const cacheKeyOverride = (
@@ -822,7 +824,7 @@ function streamSimpleKimi(
 
         if (isRecord(nextPayload)) {
           await applyKimiPayloadMutations(nextPayload, {
-            api: model.api,
+            api: PROTOCOL,
             upload,
             cacheKey,
             cacheRetention,
@@ -929,11 +931,24 @@ function streamSimpleKimi(
             type: "error",
             reason: "error",
             error: {
+              role: "assistant",
+              api: model.api,
+              provider: model.provider,
+              model: model.id,
               content: [],
               stopReason: "error",
-              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+              errorMessage: err instanceof Error ? err.message : String(err),
+              usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 0,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              },
+              timestamp: Date.now(),
             },
-          } as AssistantMessageEvent & { type: "error" });
+          });
         }
       }
 
@@ -966,7 +981,7 @@ export default function (pi: ExtensionAPI) {
         id: "kimi-for-coding",
         name: "Kimi for Coding",
         reasoning: true,
-        input: ["text", "image", "video"],
+        input: ["text", "image"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 262144,
         maxTokens: 32000,
