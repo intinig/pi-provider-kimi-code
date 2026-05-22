@@ -1,7 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
-import { applyKimiPayloadMutations, type JsonRecord, type KimiPayloadContext } from "../index.ts";
+import {
+  applyKimiPayloadMutations,
+  filterEmptyResponseStream,
+  type JsonRecord,
+  type KimiPayloadContext,
+} from "../index.ts";
 
 const baseCtx = (overrides: Partial<KimiPayloadContext> = {}): KimiPayloadContext => ({
   api: "anthropic-messages",
@@ -242,5 +247,55 @@ describe("applyKimiPayloadMutations", () => {
     assert.deepEqual(disabledPayload.extra_body, {
       thinking: { type: "disabled" },
     });
+  });
+});
+
+async function collectAsyncIterable<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const out: T[] = [];
+  for await (const item of iterable) out.push(item);
+  return out;
+}
+
+describe("filterEmptyResponseStream", () => {
+  it("suppresses Kimi empty-response text blocks and cleans the final message", async () => {
+    const events = [
+      { type: "text_start", contentIndex: 0 },
+      { type: "text_delta", contentIndex: 0, content: "(Empty response:" },
+      {
+        type: "text_end",
+        contentIndex: 0,
+        content: "(Empty response: {'content': [{'type': 'thinking'}]})",
+      },
+      {
+        type: "done",
+        message: {
+          content: [
+            { type: "text", text: "(Empty response: {'content': []})" },
+            { type: "tool_use", id: "tool-1" },
+          ],
+        },
+      },
+    ];
+
+    const out = await collectAsyncIterable(filterEmptyResponseStream(events as never));
+
+    assert.deepEqual(
+      out.map((event) => (event as { type: string }).type),
+      ["done"],
+    );
+    const done = out[0] as { message: { content: unknown[] } };
+    assert.deepEqual(done.message.content, [{ type: "tool_use", id: "tool-1" }]);
+  });
+
+  it("passes normal text blocks through unchanged", async () => {
+    const events = [
+      { type: "text_start", contentIndex: 0 },
+      { type: "text_delta", contentIndex: 0, content: "hello" },
+      { type: "text_end", contentIndex: 0, content: "hello" },
+    ];
+
+    const out = await collectAsyncIterable(filterEmptyResponseStream(events as never));
+
+    assert.deepEqual(out, events);
   });
 });

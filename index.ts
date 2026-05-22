@@ -1073,7 +1073,7 @@ export async function applyKimiPayloadMutations(
 // Pure async generator — no closure dependencies, testable with synthetic
 // event arrays.
 
-async function* filterEmptyResponseStream(
+export async function* filterEmptyResponseStream(
   upstream: AsyncIterable<AssistantMessageEvent>,
 ): AsyncIterable<AssistantMessageEvent> {
   const suppressedIndices = new Set<number>();
