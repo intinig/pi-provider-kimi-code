@@ -397,10 +397,85 @@ export async function discoverKimiModelMetadata(accessToken: string): Promise<Ki
 }
 
 // =============================================================================
+// Reuse existing kimi-cli credentials
+//
+// Users who already ran the upstream `kimi-cli` and signed in have a valid
+// OAuth token sitting at `$KIMI_SHARE_DIR/credentials/kimi-code.json`
+// (defaults to `~/.kimi/...`). Loading it lets users skip the device-flow
+// dance entirely. Read-only: we never overwrite kimi-cli's file, only seed
+// pi's auth.json via the value returned to pi's OAuth callback.
+// =============================================================================
+
+interface KimiCliCredentialsFile {
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number; // Unix seconds (upstream convention)
+}
+
+function getKimiCliCredentialsPath(): string {
+  const shareDir = process.env.KIMI_SHARE_DIR || join(os.homedir(), ".kimi");
+  return join(shareDir, "credentials", "kimi-code.json");
+}
+
+function readKimiCliCredentials(): KimiCliCredentialsFile | null {
+  const path = getKimiCliCredentialsPath();
+  try {
+    if (!existsSync(path)) return null;
+    const data = JSON.parse(readFileSync(path, "utf-8")) as KimiCliCredentialsFile;
+    if (!data.access_token || !data.refresh_token) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function tryReuseKimiCliCredentials(
+  callbacks: OAuthLoginCallbacks,
+): Promise<KimiOAuthCredentials | null> {
+  const data = readKimiCliCredentials();
+  if (!data) return null;
+
+  const expiresAtMs = typeof data.expires_at === "number" ? data.expires_at * 1000 : 0;
+  // 60s safety buffer so we don't hand pi a token that flips to expired
+  // between this returning and the first API call.
+  const stillFresh = expiresAtMs > Date.now() + 60_000;
+
+  callbacks.onProgress?.("Found existing kimi-cli credentials, reusing them.");
+
+  if (stillFresh) {
+    const extras = await discoverKimiModelMetadata(data.access_token!);
+    return {
+      access: data.access_token!,
+      refresh: data.refresh_token!,
+      expires: expiresAtMs,
+      ...extras,
+    };
+  }
+
+  callbacks.onProgress?.("kimi-cli access token expired, refreshing.");
+  try {
+    const token = await refreshAccessToken(data.refresh_token!);
+    const extras = await discoverKimiModelMetadata(token.access_token);
+    return {
+      access: token.access_token,
+      refresh: token.refresh_token,
+      expires: Date.now() + token.expires_in * 1000,
+      ...extras,
+    };
+  } catch {
+    callbacks.onProgress?.("Refresh of kimi-cli token failed, falling back to device flow.");
+    return null;
+  }
+}
+
+// =============================================================================
 // OAuth login / refresh for extension registration
 // =============================================================================
 
 async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<KimiOAuthCredentials> {
+  const reused = await tryReuseKimiCliCredentials(callbacks);
+  if (reused) return reused;
+
   // Keep trying until we get a token (handles expired device codes)
   while (true) {
     const auth = await requestDeviceAuthorization();
