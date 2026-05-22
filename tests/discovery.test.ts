@@ -1,6 +1,10 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { applyKimiOAuthExtrasToModel, discoverKimiModelMetadata } from "../index.ts";
+import {
+  DEFAULT_KIMI_MODEL_INPUT,
+  applyKimiOAuthExtrasToModel,
+  discoverKimiModelMetadata,
+} from "../index.ts";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -166,5 +170,11 @@ describe("applyKimiOAuthExtrasToModel", () => {
     assert.equal(result.wireModelId, "kimi-k2-next");
     assert.equal(result.reasoning, true);
     assert.deepEqual(result.input, ["text", "image", "video"]);
+  });
+});
+
+describe("DEFAULT_KIMI_MODEL_INPUT", () => {
+  it("advertises text, image, and video input by default", () => {
+    assert.deepEqual([...DEFAULT_KIMI_MODEL_INPUT], ["text", "image", "video"]);
   });
 });

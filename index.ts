@@ -54,6 +54,7 @@ const KIMI_CLI_VERSION = "1.44.0";
 const KIMI_CLI_USER_AGENT = `KimiCLI/${KIMI_CLI_VERSION}`;
 const KIMI_PLATFORM = "kimi_cli";
 const DEVICE_ID_PATH = join(os.homedir(), ".pi", "providers", "kimi-coding", "device_id");
+export const DEFAULT_KIMI_MODEL_INPUT = ["text", "image", "video"] as const;
 
 // =============================================================================
 // Device identification
@@ -1191,7 +1192,7 @@ export default function (pi: ExtensionAPI) {
         id: "kimi-for-coding",
         name: "Kimi for Coding",
         reasoning: true,
-        input: ["text", "image"],
+        input: [...DEFAULT_KIMI_MODEL_INPUT] as unknown as ("text" | "image")[],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 262144,
         maxTokens: 32000,
