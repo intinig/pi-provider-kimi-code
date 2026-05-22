@@ -877,18 +877,33 @@ function streamSimpleKimi(
         // Stream ended normally: flush any remaining buffered starts.
         for (const e of prefixBuffer) filtered.push(e);
       } catch (err) {
-        // Unhandled exception: flush buffer so the consumer still sees events.
-        for (const e of prefixBuffer) filtered.push(e);
+        // Upstream threw rather than emitting a stream `error` event. This can
+        // be the same stale-token 401 surfaced as an exception (depending on
+        // the SDK path / network layer), so mirror the in-stream refresh
+        // branch: on attempt 0, try one OAuth refresh + retry. Either way,
+        // discard `prefixBuffer` — we never confirmed the stream actually
+        // started, and flushing the buffered `start` would resurrect the
+        // phantom empty assistant message this PR set out to fix.
         console.error("[kimi-coding] stream error:", err);
-        filtered.push({
-          type: "error",
-          reason: "error",
-          error: {
-            content: [],
-            stopReason: "error",
-            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-          },
-        } as AssistantMessageEvent & { type: "error" });
+        if (attempt === 0) {
+          const refreshed = await refreshKimiAuthToken(currentKey);
+          if (refreshed && refreshed !== currentKey) {
+            console.error("[kimi-coding] retrying stream after thrown error with refreshed token");
+            currentKey = refreshed;
+            shouldRetry = true;
+          }
+        }
+        if (!shouldRetry) {
+          filtered.push({
+            type: "error",
+            reason: "error",
+            error: {
+              content: [],
+              stopReason: "error",
+              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+            },
+          } as AssistantMessageEvent & { type: "error" });
+        }
       }
 
       if (shouldRetry) {
