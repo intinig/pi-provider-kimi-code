@@ -320,10 +320,66 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> 
 }
 
 // =============================================================================
+// Model discovery (/v1/models)
+//
+// Kimi For Coding exposes an OpenAI-compatible `/v1/models` endpoint that
+// reports the actual server-side model identity and context window for the
+// authenticated account. Lighting it up at login/refresh lets us reflect
+// server-side changes (renamed wire id, expanded context) without shipping a
+// new release. Failures are non-fatal: discovery only enriches credentials.
+// =============================================================================
+
+interface KimiOAuthExtras {
+  wireModelId?: string;
+  modelDisplay?: string;
+  contextLength?: number;
+}
+
+type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
+
+interface KimiServerModel {
+  id?: unknown;
+  display_name?: unknown;
+  context_length?: unknown;
+}
+
+function getModelsUrl(): string {
+  const base = getBaseUrl().replace(/\/+$/, "");
+  return base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
+}
+
+async function discoverKimiModelMetadata(accessToken: string): Promise<KimiOAuthExtras> {
+  if (!accessToken) return {};
+  try {
+    const response = await fetch(getModelsUrl(), {
+      headers: {
+        ...getCommonHeaders(),
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return {};
+    const json = (await response.json()) as { data?: unknown };
+    const list = Array.isArray(json.data) ? (json.data as KimiServerModel[]) : [];
+    const preferred =
+      list.find((m) => typeof m.id === "string" && m.id === "kimi-for-coding") ?? list[0];
+    if (!preferred || typeof preferred.id !== "string") return {};
+    const extras: KimiOAuthExtras = { wireModelId: preferred.id };
+    if (typeof preferred.display_name === "string") extras.modelDisplay = preferred.display_name;
+    if (typeof preferred.context_length === "number" && preferred.context_length > 0) {
+      extras.contextLength = preferred.context_length;
+    }
+    return extras;
+  } catch {
+    return {};
+  }
+}
+
+// =============================================================================
 // OAuth login / refresh for extension registration
 // =============================================================================
 
-async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<KimiOAuthCredentials> {
   // Keep trying until we get a token (handles expired device codes)
   while (true) {
     const auth = await requestDeviceAuthorization();
@@ -370,10 +426,12 @@ async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<OAuthCrede
     }
 
     if (token) {
+      const extras = await discoverKimiModelMetadata(token.access_token);
       return {
         access: token.access_token,
         refresh: token.refresh_token,
         expires: Date.now() + token.expires_in * 1000,
+        ...extras,
       };
     }
 
@@ -381,12 +439,14 @@ async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<OAuthCrede
   }
 }
 
-async function refreshKimiCodeToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+async function refreshKimiCodeToken(credentials: OAuthCredentials): Promise<KimiOAuthCredentials> {
   const token = await refreshAccessToken(credentials.refresh);
+  const extras = await discoverKimiModelMetadata(token.access_token);
   return {
     access: token.access_token,
     refresh: token.refresh_token,
     expires: Date.now() + token.expires_in * 1000,
+    ...extras,
   };
 }
 
@@ -808,6 +868,12 @@ function streamSimpleKimi(
   const cacheRetention = resolveCacheRetention(options?.cacheRetention);
   const envOverrides = readEnvOverrides();
   const originalOnPayload = options?.onPayload;
+  // The pi-side model id ("kimi-for-coding") is what users select via /model
+  // and what gets persisted into sessions. The wire model id discovered at
+  // OAuth login (e.g. a versioned alias the server exposes) gets carried on
+  // the model object via modifyModels and rewritten into the request payload
+  // here so /v1/chat/completions and /v1/messages see the real wire id.
+  const wireModelId = (model as Model<Api> & { wireModelId?: unknown }).wireModelId;
 
   const buildPatchedOptions = (apiKey: string): SimpleStreamOptions => {
     const upload: Uploader | undefined = apiKey
@@ -831,6 +897,13 @@ function streamSimpleKimi(
             reasoning: options?.reasoning,
             envOverrides,
           });
+          if (
+            typeof wireModelId === "string" &&
+            wireModelId &&
+            nextPayload.model === "kimi-for-coding"
+          ) {
+            nextPayload.model = wireModelId;
+          }
         }
 
         if (originalOnPayload) {
@@ -993,6 +1066,28 @@ export default function (pi: ExtensionAPI) {
       login: loginKimiCode,
       refreshToken: refreshKimiCodeToken,
       getApiKey: (cred) => cred.access,
+      // Reflect server-side model identity on the registered model after login
+      // / refresh. We never rewrite the model id (pi-side `/model` selections
+      // and persisted sessions reference it); only the human-facing name, the
+      // context window, and an out-of-band `wireModelId` carried into the
+      // request payload by streamSimpleKimi.
+      modifyModels: (models, cred) => {
+        const extras = cred as KimiOAuthCredentials;
+        return models.map((model) => {
+          if (model.id !== "kimi-for-coding") return model;
+          const next: Model<Api> & { wireModelId?: string } = { ...model };
+          if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
+            next.name = extras.modelDisplay;
+          }
+          if (typeof extras.contextLength === "number" && extras.contextLength > 0) {
+            next.contextWindow = extras.contextLength;
+          }
+          if (typeof extras.wireModelId === "string" && extras.wireModelId) {
+            next.wireModelId = extras.wireModelId;
+          }
+          return next;
+        });
+      },
     },
   });
 }
