@@ -86,6 +86,25 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(imageUrl.url, "ms://abc123");
   });
 
+  it("drops empty assistant content when OpenAI tool calls are present", async () => {
+    const payload: JsonRecord = {
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "  " }],
+          tool_calls: [
+            { id: "call-1", type: "function", function: { name: "x", arguments: "{}" } },
+          ],
+        },
+      ],
+    };
+
+    await applyKimiPayloadMutations(payload, baseCtx({ api: "openai-completions" }));
+
+    const messages = payload.messages as JsonRecord[];
+    assert.equal(messages[0]?.content, undefined);
+  });
+
   it("uploads inline base64 images in anthropic payloads and rewrites source type to 'url'", async () => {
     const upload = async () => "ms://anthropic-id";
     const payload: JsonRecord = {

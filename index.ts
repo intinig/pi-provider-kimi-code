@@ -807,6 +807,27 @@ async function transformOpenAIPayloadFiles(payload: JsonRecord, upload: Uploader
   }
 }
 
+function isEffectivelyEmptyOpenAIContent(content: unknown): boolean {
+  if (typeof content === "string") return content.trim() === "";
+  if (!Array.isArray(content)) return false;
+  for (const part of content) {
+    if (!isRecord(part) || part.type !== "text") return false;
+    if (typeof part.text === "string" && part.text.trim()) return false;
+  }
+  return true;
+}
+
+function normalizeOpenAIAssistantToolCalls(payload: JsonRecord): void {
+  if (!Array.isArray(payload.messages)) return;
+  for (const message of payload.messages) {
+    if (!isRecord(message) || message.role !== "assistant") continue;
+    if (!Array.isArray(message.tool_calls) || message.tool_calls.length === 0) continue;
+    if (isEffectivelyEmptyOpenAIContent(message.content)) {
+      delete message.content;
+    }
+  }
+}
+
 async function transformAnthropicPayloadFiles(
   payload: JsonRecord,
   upload: Uploader,
@@ -874,6 +895,9 @@ export async function applyKimiPayloadMutations(
     } else if (ctx.api === "anthropic-messages") {
       await transformAnthropicPayloadFiles(payload, ctx.upload);
     }
+  }
+  if (ctx.api === "openai-completions") {
+    normalizeOpenAIAssistantToolCalls(payload);
   }
 
   // 3. prompt_cache_key injection. Respect any key already on the payload,
