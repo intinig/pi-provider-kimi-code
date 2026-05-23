@@ -5,6 +5,7 @@ import {
   applyKimiPayloadMutations,
   type JsonRecord,
   type KimiPayloadContext,
+  resolveCacheRetention,
 } from "../src/payload.ts";
 import { filterEmptyResponseStream } from "../src/stream.ts";
 
@@ -45,6 +46,17 @@ describe("applyKimiPayloadMutations", () => {
       baseCtx({ cacheKey: "sess-1", cacheRetention: "none" }),
     );
     assert.equal(payload.prompt_cache_key, undefined);
+  });
+
+  it("honors PI_CACHE_RETENTION=none when no option override is provided", () => {
+    const old = process.env.PI_CACHE_RETENTION;
+    try {
+      process.env.PI_CACHE_RETENTION = "none";
+      assert.equal(resolveCacheRetention(undefined), "none");
+    } finally {
+      if (old === undefined) delete process.env.PI_CACHE_RETENTION;
+      else process.env.PI_CACHE_RETENTION = old;
+    }
   });
 
   it("respects an existing payload.prompt_cache_key (caller has final say)", async () => {

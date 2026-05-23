@@ -24,7 +24,10 @@ export interface KimiEnvOverrides {
 
 export function resolveCacheRetention(value?: CacheRetention): CacheRetention {
   if (value === "none" || value === "short" || value === "long") return value;
-  if (process.env.PI_CACHE_RETENTION === "long") return "long";
+  const envRetention = process.env.PI_CACHE_RETENTION;
+  if (envRetention === "none" || envRetention === "short" || envRetention === "long") {
+    return envRetention;
+  }
   return "short";
 }
 
