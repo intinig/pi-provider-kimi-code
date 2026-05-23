@@ -1,42 +1,33 @@
 # Pi extension for Kimi Code
+
 [![npm](https://img.shields.io/npm/v/pi-provider-kimi-code)](https://www.npmjs.com/package/pi-provider-kimi-code)
 [![license](https://img.shields.io/npm/l/pi-provider-kimi-code)](./LICENSE)
 
-**Use Kimi Code in Pi without losing the Kimi-specific bits.**
+**Use Kimi Code in Pi, with the Kimi parts handled.**
 
-Pi gives you the harness and extension ecosystem. Kimi CLI gives you the official Kimi Code path. This package sits between them: Kimi Code as a Pi provider, plus the details the basic provider keeps simple — file uploads, cache behavior, session reuse, and a base for Kimi-native tools.
+Pi already has a basic `kimi-coding` provider. This extension is for the parts that start to matter once Kimi Code becomes part of your real Pi workflow: account login reuse, file uploads, measured cache behavior, live model metadata, and optional Moonshot search/fetch tools.
 
 ## Why this exists
 
-Pi already has a built-in `kimi-coding` provider (see [`pi.dev/docs/.../providers`](https://pi.dev/docs/latest/providers)). It is good basic support: point Pi at Kimi Code and start coding.
+Pi is a small harness you adapt to your own workflow. Kimi CLI is Moonshot's official Kimi Code path. This package sits between them: Kimi Code as a Pi provider, plus the Kimi-specific details that the basic provider keeps simple.
 
-This extension is for the next layer. If you are building real Pi workflows, the Kimi-specific details start to matter:
-
-- **Files should go through Kimi's Files API.** Large images are uploaded to `/files` and referenced as `ms://` IDs instead of being sent as huge inline base64 payloads.
-- **Cache behavior should be visible.** Kimi caches by content prefix, not by `prompt_cache_key`. This repo measures that behavior and keeps the provider aligned with it.
-- **Existing Kimi sessions should carry over.** If you already use `kimi-cli`, this extension can reuse that login instead of making you manage another API key.
-- **Protocol choice should stay available.** The default is OpenAI-compatible mode, but Anthropic-compatible mode is still there when your Pi setup needs it.
-
-> On prompt caching: the built-in provider works fine. Kimi's Coding endpoint caches by content prefix hash automatically — neither `cache_control` markers nor `prompt_cache_key` actually drive cache hits. See [docs/caching.md](docs/caching.md) for measurements.
-
-## Who is this for?
-
-- You use Pi as your coding harness and want Kimi Code inside that workflow.
-- You already use `kimi-cli`, but want Pi's extensions, skills, prompts, themes, and custom UI pieces around the same Kimi Code account.
-- You are building on top of Pi and need the Kimi-specific parts to behave predictably: uploads, cache behavior, model metadata, and protocol choice.
-
-Pay-per-token via `KIMI_API_KEY` still works if you just want to try Kimi in CI or without a subscription.
+- **Use your Kimi account.** Log in with `/login kimi-coding`, or reuse an existing `kimi-cli` session.
+- **Send files the Kimi way.** Large inline images go through Kimi's Files API and become `ms://` references instead of huge base64 payloads.
+- **Know what the cache is doing.** Kimi caches by content prefix. This repo measures that behavior instead of pretending `prompt_cache_key` controls it.
+- **Use the safer protocol by default.** OpenAI-compatible mode is the default because tool results are less ambiguous there. Anthropic-compatible mode is still available.
+- **Turn on Kimi-native tools when you want them.** `moonshot_search` and `moonshot_fetch` are opt-in, configurable per user or per project.
 
 ## What this package adds
 
-- **Kimi account login in Pi** — sign in with your Kimi Code account. `KIMI_API_KEY` still works for CI or pay-per-token use.
-- **`kimi-cli` session reuse** — if you already signed in with the official CLI, this extension can read `~/.kimi/credentials/kimi-code.json` and skip another browser login.
-- **Kimi Files API upload** — large images are uploaded to `/v1/files` and sent as `ms://` references instead of huge inline base64 payloads.
-- **Measured cache behavior** — Kimi's Coding endpoint caches by content prefix hash with TTL ≥ 5 minutes. This repo documents what changes the cache and what does not.
-- **Live model metadata** — name, context window, reasoning support, and image-input support refresh from Kimi's `/v1/models` endpoint at login / refresh time.
-- **Protocol choice** — OpenAI-compatible mode is the default. Anthropic-compatible mode is still available with `KIMI_CODE_PROTOCOL=anthropic`.
-- **Stream cleanup** — Kimi occasionally emits placeholder text during thinking-only responses; this extension hides those blocks before they reach the Pi UI.
-- **No build step** — Pi loads the TypeScript extension directly.
+- Kimi account login in Pi, plus `KIMI_API_KEY` for CI or pay-per-token use.
+- `kimi-cli` credential reuse from `~/.kimi/credentials/kimi-code.json`.
+- Kimi Files API uploads for large inline images.
+- Live model metadata from Kimi at login / refresh time.
+- OpenAI-compatible mode by default, Anthropic-compatible mode on request.
+- Kimi K2.6 reasoning level mapping for Pi's reasoning controls.
+- Stream cleanup for Kimi's thinking-only placeholder text.
+- Optional `moonshot_search` and `moonshot_fetch` tools via `/kimi-settings`.
+- No build step; Pi loads the TypeScript extension directly.
 
 ## Install
 
@@ -57,32 +48,29 @@ pi -e /path/to/pi-provider-kimi-code
 If you prefer not to use npm, download the tarball from the [latest release](https://github.com/Leechael/pi-provider-kimi-code/releases/latest), extract it, and install from the local path:
 
 ```bash
-# Download and extract
 curl -L https://github.com/Leechael/pi-provider-kimi-code/releases/latest/download/pi-provider-kimi-code.tar.gz | tar -xz -C /tmp
-
-# Install from the extracted directory
 pi install /tmp/pi-provider-kimi-code
 ```
 
 ## Sign in
 
-### Browser login
-
 Inside Pi, run:
 
-```
+```text
 /login kimi-coding
 ```
 
-A browser tab opens, you sign into your Kimi account, and credentials are stored at `~/.pi/agent/auth.json`. Tokens refresh automatically.
+A browser tab opens, you sign into your Kimi account, and Pi stores the credential at `~/.pi/agent/auth.json`. Tokens refresh automatically.
 
-### Already logged in via `kimi-cli`?
+If you already use `kimi-cli`, this extension can reuse its credential file:
 
-If `~/.kimi/credentials/kimi-code.json` exists, `/login kimi-coding` reads that file, refreshes the access token if needed, and finishes without opening a browser. The `kimi-cli` credential file is read-only from this extension's perspective — it is never overwritten. Set `KIMI_SHARE_DIR` to point at a non-default location.
+```text
+~/.kimi/credentials/kimi-code.json
+```
 
-### API key
+The file is read-only from this extension's side. Set `KIMI_SHARE_DIR` if your `kimi-cli` share directory lives somewhere else.
 
-For CI or pay-per-token use, set `KIMI_API_KEY`:
+For CI or pay-per-token use, set `KIMI_API_KEY` instead:
 
 ```bash
 KIMI_API_KEY=sk-... pi
@@ -92,13 +80,19 @@ KIMI_API_KEY=sk-... pi
 
 This provider publishes one Pi model ID:
 
-```
+```text
 kimi-coding/kimi-for-coding
 ```
 
-Kimi keeps the Coding model behind aliases, so this provider does not hardcode a long model list. When you log in or refresh your token, it asks Kimi for the current model info and updates what Pi sees. If your account is on a newer rollout or an internal test, Pi can pick up the latest model name and context size without waiting for this package to release.
+Select it inside Pi:
 
-The fallback values are:
+```text
+/model kimi-coding/kimi-for-coding
+```
+
+Kimi keeps Coding models behind aliases. Rather than hardcoding a stale model list, this extension asks Kimi for the current model info when you log in or refresh. If your account is on a newer rollout or internal test, Pi can pick up the latest model name and context size without waiting for a package release.
+
+Fallback values:
 
 - Context window: `262144` tokens
 - Max output: `32000` tokens
@@ -114,11 +108,44 @@ Kimi K2.6 supports Pi's reasoning levels. This provider maps them to Kimi's curr
 
 If Kimi reports a larger context window, the provider uses that value. You can also override the advertised context or model name with `KIMI_MODEL_MAX_CONTEXT_SIZE` / `KIMI_MODEL_NAME`; see [docs/ENV.md](docs/ENV.md).
 
-Select it inside Pi:
+## Optional Moonshot tools
 
+Kimi Coding has server-side search and fetch tools. This extension can expose them to Pi as:
+
+- `moonshot_search`
+- `moonshot_fetch`
+
+They are off by default. Turn them on when you want Kimi's own search/fetch path in the agent loop.
+
+Inside Pi, run:
+
+```text
+/kimi-settings
 ```
-/model kimi-coding/kimi-for-coding
+
+That command shows your current Kimi usage summary and lets you edit the home or project config. Changes apply to the active session tool set.
+
+Config files are JSON:
+
+- Home: `~/.pi/pi-provider-kimi-code.json`
+- Project override: `<cwd>/.pi/pi-provider-kimi-code.json`
+
+Project config overrides home config with a deep merge. Missing files or missing keys mean both tools stay off.
+
+```json
+{
+  "tools": {
+    "moonshot_search": { "enabled": true, "default_collapsed": true },
+    "moonshot_fetch": { "enabled": true, "default_collapsed": true }
+  }
+}
 ```
+
+Both tools require `/login kimi-coding` OAuth credentials. `KIMI_API_KEY` is not used for these tools. Your account also needs access to Moonshot's server-side search/fetch services; if not, the upstream service can return subscription or whitelist errors.
+
+`default_collapsed` controls only the TUI preview. The full tool result still goes to the model; set it to `false` if you want previews expanded by default.
+
+If you already use another search or fetch tool, pick one path for a session. Overlapping tools can make the model choose the wrong one.
 
 ## Common knobs
 
@@ -127,7 +154,9 @@ Most users do not need environment variables. Two are worth knowing:
 - `KIMI_API_KEY` — static API key for CI or pay-per-token use.
 - `KIMI_CODE_PROTOCOL` — `openai` by default; set to `anthropic` if your Pi setup needs Anthropic-compatible requests.
 
-The full list, including base URL overrides, `kimi-cli` path overrides, upload tuning, debug logs, and model metadata overrides, lives in [docs/ENV.md](docs/ENV.md).
+Moonshot search/fetch tools are configured through `/kimi-settings` or JSON config files, not env vars.
+
+The full env list, including base URL overrides, `kimi-cli` path overrides, upload tuning, debug logs, and model metadata overrides, lives in [docs/ENV.md](docs/ENV.md).
 
 ## Notes
 
@@ -170,11 +199,21 @@ Pi runs on Node's `fetch` / undici stack, which handles `http_proxy` / `https_pr
 
 ### `/login kimi-coding` prints a device code but the browser never opens
 
-The login flow always prints a verification URL — opening it is the terminal's job. If your terminal or OS blocks auto-open, copy the URL and paste it into a browser manually.
+The login flow always prints a verification URL. If your terminal or OS blocks auto-open, copy the URL and paste it into a browser manually.
 
 ### "Access denied" or subscription errors after a successful login
 
 Your Moonshot account needs an active Kimi Code subscription for the provider to do anything useful. If the same account works in `kimi-cli`, re-run `/login kimi-coding` to refresh credentials.
+
+### Moonshot tools do not show up
+
+Run `/kimi-settings` and check whether `moonshot_search` / `moonshot_fetch` are enabled in the home or project config. These tools also require `/login kimi-coding`; `KIMI_API_KEY` is not enough.
+
+If you changed the JSON config by hand, reload it through `/kimi-settings` or start a new Pi session.
+
+### Moonshot tools return subscription or whitelist errors
+
+The tools call Moonshot's server-side search/fetch services. Some accounts may not have access even with an active Kimi Code Plan. The error comes from the upstream service.
 
 ### Large images fail with a payload error
 
