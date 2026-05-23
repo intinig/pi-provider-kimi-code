@@ -18,7 +18,7 @@ import {
   streamSimpleOpenAICompletions,
 } from "@earendil-works/pi-ai";
 
-import { PROTOCOL } from "./constants.ts";
+import { IS_OPENAI_PROTOCOL, PROTOCOL } from "./constants.ts";
 import { isKimiAuthErrorMessage, refreshKimiAuthToken } from "./oauth.ts";
 import {
   type Uploader,
@@ -180,17 +180,17 @@ export function streamSimpleKimi(
 
     while (true) {
       const patchedOptions = buildPatchedOptions(currentKey);
-      // Route by the module-level PROTOCOL, not model.api, since we register
-      // with a custom api type (kimi-openai-completions / kimi-anthropic-messages)
-      // to avoid overriding the built-in Anthropic/OpenAI stream handlers.
-      const upstream =
-        PROTOCOL === "openai-completions"
-          ? streamSimpleOpenAICompletions(
-              model as Model<"openai-completions">,
-              context,
-              patchedOptions,
-            )
-          : streamSimpleAnthropic(model as Model<"anthropic-messages">, context, patchedOptions);
+      // Route by the module-level protocol flag, not model.api, since we
+      // register with a custom api type (kimi-openai-completions /
+      // kimi-anthropic-messages) to avoid overriding the built-in
+      // Anthropic/OpenAI stream handlers.
+      const upstream = IS_OPENAI_PROTOCOL
+        ? streamSimpleOpenAICompletions(
+            model as Model<"openai-completions">,
+            context,
+            patchedOptions,
+          )
+        : streamSimpleAnthropic(model as Model<"anthropic-messages">, context, patchedOptions);
 
       let shouldRetry = false;
       let prefixBuffer: AssistantMessageEvent[] = [];

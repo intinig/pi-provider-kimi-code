@@ -14,8 +14,9 @@ models. It supports two authentication modes:
 
 The Kimi Code API is wire-compatible with both the Anthropic Messages and OpenAI Chat
 Completions formats. The extension picks which wire protocol to use via the
-`KIMI_CODE_PROTOCOL` environment variable (default: `anthropic-messages`). A
-`streamSimpleKimi()` wrapper sits on top of pi's built-in streaming to:
+`KIMI_CODE_PROTOCOL` environment variable. Supported values are `openai` (default)
+and `anthropic`. A `streamSimpleKimi()` wrapper sits on top of pi's built-in
+streaming to:
 
 - upload inline base64 images (and videos, OpenAI protocol only) to Kimi's `/v1/files` endpoint as `ms://` references
 - inject Kimi's proprietary `prompt_cache_key` alongside Anthropic `cache_control`
@@ -51,9 +52,9 @@ The default export is a function that receives `ExtensionAPI` and calls
 
 ```
 Provider ID:    kimi-coding
-Base URL:       https://api.kimi.com/coding       (anthropic-messages, default)
-                https://api.kimi.com/coding/v1    (openai-completions)
-API type:       anthropic-messages | openai-completions  (via KIMI_CODE_PROTOCOL)
+Base URL:       https://api.kimi.com/coding/v1    (openai-completions, default)
+                https://api.kimi.com/coding       (anthropic-messages)
+API type:       anthropic-messages | openai-completions  (via KIMI_CODE_PROTOCOL=openai|anthropic)
 Env var key:    KIMI_API_KEY
 ```
 

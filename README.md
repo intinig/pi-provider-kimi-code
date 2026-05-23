@@ -12,7 +12,7 @@ pi-coding-agent already ships a built-in `kimi-coding` provider (see [`pi.dev/do
 
 - **Browser-based account login + `kimi-cli` session reuse.** The built-in provider authenticates via `KIMI_API_KEY` only. This extension adds the OAuth device-code flow and transparently picks up an existing `kimi-cli` session from `~/.kimi/credentials/kimi-code.json`, so your Kimi Code Plan login carries over from the official CLI.
 - **Images and videos are inlined as base64.** The built-in provider has no integration with Kimi's `/files` upload endpoint, so multimedia is sent inline as base64 in `messages`, counted toward your token budget and capped by request-size limits. This extension uploads images over `KIMI_CODE_UPLOAD_THRESHOLD_BYTES` (default 1 MB) and all videos to `/files`, references them by `ms://` id, and pays only the file-storage cost instead of token cost.
-- **OpenAI-compatible mode of the Coding endpoint is not exposed.** The built-in `kimi-coding` provider is Anthropic-only on `api.kimi.com/coding`. Kimi For Coding also serves an OpenAI-compatible variant at `api.kimi.com/coding/v1` — useful when something in your toolchain expects `role: "tool"` semantics, or when working around the [tool_result misread issue](https://github.com/Leechael/pi-provider-kimi-code/issues/5) under the Anthropic protocol. Opt in with `KIMI_CODE_PROTOCOL=openai`. (Note: the `moonshotai` / `moonshotai-cn` providers in `pi` are a different product — Moonshot's pay-per-token Open Platform, not the Coding Plan.)
+- **OpenAI-compatible mode of the Coding endpoint is not exposed.** The built-in `kimi-coding` provider is Anthropic-only on `api.kimi.com/coding`. Kimi For Coding also serves an OpenAI-compatible variant at `api.kimi.com/coding/v1` — useful when something in your toolchain expects `role: "tool"` semantics, or when working around the [tool_result misread issue](https://github.com/Leechael/pi-provider-kimi-code/issues/5) under the Anthropic protocol. This extension defaults to OpenAI-compatible mode; set `KIMI_CODE_PROTOCOL=anthropic` to use Anthropic-compatible mode. Supported values are `openai` and `anthropic`. (Note: the `moonshotai` / `moonshotai-cn` providers in `pi` are a different product — Moonshot's pay-per-token Open Platform, not the Coding Plan.)
 
 > On prompt caching: the built-in provider works fine. Kimi's Coding endpoint caches by content prefix hash automatically — neither `cache_control` markers nor `prompt_cache_key` actually drive cache hits. See [docs/caching.md](docs/caching.md) for measurements.
 
@@ -107,7 +107,7 @@ Select it inside `pi`:
 | `KIMI_API_KEY`                     | Static API key (alternative to browser login)          |
 | `KIMI_CODE_BASE_URL`               | Override the API base URL                              |
 | `KIMI_CODE_OAUTH_HOST`             | Override the OAuth host                                |
-| `KIMI_CODE_PROTOCOL`               | `anthropic` (default) or `openai`                      |
+| `KIMI_CODE_PROTOCOL`               | `openai` (default) or `anthropic`                      |
 | `KIMI_CODE_UPLOAD_THRESHOLD_BYTES` | Image auto-upload threshold, default `1048576` (1 MB)  |
 | `KIMI_CODE_DEBUG`                  | Set to `1` to print provider-side debug logs           |
 
@@ -137,7 +137,7 @@ Any recent [pi-coding-agent](https://github.com/earendil-works/pi/tree/main/pack
 
 ### Why are there two protocol modes?
 
-Kimi's coding endpoint speaks both Anthropic and OpenAI dialects. Anthropic mode has better visibility into cache hits, so it's the default. Switch via `KIMI_CODE_PROTOCOL=openai` if something in your pi setup prefers the OpenAI path.
+Kimi's coding endpoint speaks both Anthropic and OpenAI dialects. This extension defaults to OpenAI-compatible mode. `KIMI_CODE_PROTOCOL` supports `openai` and `anthropic`; set `KIMI_CODE_PROTOCOL=anthropic` if something in your pi setup prefers the Anthropic path.
 
 ## Troubleshooting
 
