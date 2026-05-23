@@ -166,9 +166,9 @@ The full env list, including base URL overrides, `kimi-cli` path overrides, uplo
 
 ### Cache behavior
 
-Kimi's cache is content-based. It fires automatically when your prompt prefix matches an earlier request. `prompt_cache_key` and Anthropic `cache_control` markers do not control cache hits on the Coding endpoint.
+Kimi's cache is content-based. It fires automatically when your prompt prefix matches an earlier request. `prompt_cache_key`, Anthropic `cache_control` markers, and identifying headers like `X-Msh-Device-Id` are all ignored for cache decisions — cache is keyed purely by prompt content and is shared across machines, agent forks, and device-id rotations on the same Kimi account.
 
-See [docs/caching.md](docs/caching.md) for the measured behavior: TTL, cross-protocol cache reuse, 256-token prefix alignment, and the cases that invalidate cache.
+See [docs/caching.md](docs/caching.md) for the measured behavior: TTL, cross-protocol cache reuse, 256-token prefix alignment, device-id sharing, and the cases that invalidate cache.
 
 ### Protocol modes
 
