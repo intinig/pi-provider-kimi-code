@@ -42,9 +42,9 @@ export KIMI_E2E_SKIP_VERY_LARGE_CACHE="${KIMI_E2E_SKIP_VERY_LARGE_CACHE:-1}"
 export KIMI_E2E_VERY_LARGE_REPEAT="${KIMI_E2E_VERY_LARGE_REPEAT:-12000}"
 
 KIMI_HEADERS=(
-  -H "User-Agent: KimiCLI/1.30.0"
+  -H "User-Agent: KimiCLI/1.44.0"
   -H "X-Msh-Platform: kimi_cli"
-  -H "X-Msh-Version: 1.30.0"
+  -H "X-Msh-Version: 1.44.0"
 )
 BASE_URL="${KIMI_CODE_BASE_URL:-https://api.kimi.com/coding/v1}"
 BASE_URL="${BASE_URL%/}"
@@ -130,9 +130,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def make_payload(round_key):
@@ -261,9 +261,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def build_payload(salt, use_cache_control, prompt_cache_key):
@@ -398,9 +398,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 # Tool declared in every request so the assistant tool_use history is
@@ -596,9 +596,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def build_payload(salt, prompt_cache_key=None):
@@ -752,9 +752,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 salt = f"chain-{uuid.uuid4()}"
@@ -947,16 +947,16 @@ ANTHROPIC_HEADERS = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 OPENAI_HEADERS = {
     "Authorization": f"Bearer {api_key}",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def _post(label, url, payload, headers):
@@ -1076,9 +1076,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 DEMO_TOOLS = [{
@@ -1230,9 +1230,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 salt = f"largedelta-{uuid.uuid4()}"
@@ -1354,9 +1354,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def send(label, text):
@@ -1454,9 +1454,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def send(label, messages):
@@ -1568,9 +1568,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 TOOL_READ = {
@@ -1705,9 +1705,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 repeats = [1, 5, 10, 20, 40, 80]
@@ -1816,9 +1816,9 @@ repeat = int(os.environ.get("KIMI_E2E_CACHE_REPEAT", "2000"))
 headers = {
     "Authorization": f"Bearer {api_key}",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def cache_read_from_usage(u):
@@ -2072,9 +2072,9 @@ alt_model = os.environ.get("KIMI_E2E_ALT_MODEL")
 headers = {
     "Authorization": f"Bearer {api_key}",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def cache_read_from_usage(u):
@@ -2174,9 +2174,9 @@ base_url = os.environ.get("KIMI_CODE_BASE_URL", "https://api.kimi.com/coding/v1"
 headers = {
     "Authorization": f"Bearer {api_key}",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def make_png(color):
@@ -2193,9 +2193,9 @@ def upload(path):
         [
             "curl", "-s", "-X", "POST", f"{base_url}/files",
             "-H", f"Authorization: Bearer {api_key}",
-            "-H", "User-Agent: KimiCLI/1.30.0",
+            "-H", "User-Agent: KimiCLI/1.44.0",
             "-H", "X-Msh-Platform: kimi_cli",
-            "-H", "X-Msh-Version: 1.30.0",
+            "-H", "X-Msh-Version: 1.44.0",
             "-F", f"file=@{path};type=image/png",
             "-F", "purpose=image",
         ],
@@ -2318,9 +2318,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def cache_read_from_usage(u):
@@ -2413,9 +2413,9 @@ headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "User-Agent": "KimiCLI/1.30.0",
+    "User-Agent": "KimiCLI/1.44.0",
     "X-Msh-Platform": "kimi_cli",
-    "X-Msh-Version": "1.30.0",
+    "X-Msh-Version": "1.44.0",
 }
 
 def cache_read_from_usage(u):
