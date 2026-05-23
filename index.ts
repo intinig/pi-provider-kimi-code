@@ -20,6 +20,7 @@
 
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import os from "node:os";
 
 import {
   DEFAULT_KIMI_MODEL_INPUT,
@@ -27,6 +28,7 @@ import {
   PROVIDER_ID,
   getBaseUrl,
 } from "./src/constants.ts";
+import { loadKimiCodeConfig } from "./src/config.ts";
 import { getCommonHeaders } from "./src/device.ts";
 import {
   type KimiOAuthCredentials,
@@ -35,8 +37,11 @@ import {
 } from "./src/models.ts";
 import { loginKimiCode, refreshKimiCodeToken } from "./src/oauth.ts";
 import { streamSimpleKimi } from "./src/stream.ts";
+import { buildMoonshotFetchTool, buildMoonshotSearchTool } from "./src/tools/moonshot.ts";
 
 export default function (pi: ExtensionAPI) {
+  const config = loadKimiCodeConfig({ cwd: process.cwd(), home: os.homedir() });
+
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: getBaseUrl(),
     apiKey: "KIMI_API_KEY",
@@ -76,4 +81,11 @@ export default function (pi: ExtensionAPI) {
       },
     },
   });
+
+  if (config.tools.moonshot_search.enabled) {
+    pi.registerTool(buildMoonshotSearchTool());
+  }
+  if (config.tools.moonshot_fetch.enabled) {
+    pi.registerTool(buildMoonshotFetchTool());
+  }
 }

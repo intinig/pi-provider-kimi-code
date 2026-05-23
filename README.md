@@ -1,4 +1,5 @@
 # Pi extension for Kimi Code
+
 [![npm](https://img.shields.io/npm/v/pi-provider-kimi-code)](https://www.npmjs.com/package/pi-provider-kimi-code)
 [![license](https://img.shields.io/npm/l/pi-provider-kimi-code)](./LICENSE)
 
@@ -128,6 +129,35 @@ Most users do not need environment variables. Two are worth knowing:
 - `KIMI_CODE_PROTOCOL` — `openai` by default; set to `anthropic` if your Pi setup needs Anthropic-compatible requests.
 
 The full list, including base URL overrides, `kimi-cli` path overrides, upload tuning, debug logs, and model metadata overrides, lives in [docs/ENV.md](docs/ENV.md).
+
+## Optional Moonshot tools
+
+This extension can also register Kimi Coding's server-side `moonshot_search` and `moonshot_fetch` tools. These are Moonshot services behind the Kimi Coding endpoint, not built-in Pi web tools, and they stay disabled until you opt in.
+
+Config files are JSON:
+
+- Home: `~/.pi/pi-provider-kimi-code.json`
+- Project override: `<cwd>/.pi/pi-provider-kimi-code.json`
+
+Project config overrides home config with a deep merge. Missing files or missing keys mean both tools stay off.
+
+```json
+{
+  "tools": {
+    "moonshot_search": { "enabled": true, "default_collapsed": true },
+    "moonshot_fetch": { "enabled": true, "default_collapsed": true }
+  }
+}
+```
+
+Inside Pi, run `/kimi-settings` to see your current Kimi usage summary and edit the home or project config. Enabling or disabling a tool also updates the active tool set for the current session.
+
+Both tools require `/login kimi-coding` OAuth credentials and an active Kimi Code Plan. `KIMI_API_KEY` is not used for these tools. Downstream users may still see subscription or whitelist errors if their account is not entitled to the server-side search/fetch services.
+
+`default_collapsed` controls only the TUI preview. The full tool result still goes to the model; setting it to `false` makes the result render expanded by default.
+
+If you already use MCP-provided web search or fetch tools, pick one path for a session. Enabling both gives the model overlapping tools; these Moonshot tools are only available to the agent after the config file enables them.
+
 
 ## Notes
 
