@@ -10,9 +10,11 @@ It's **"Claude Code for Kimi"** — log in with your Kimi account, with `KIMI_AP
 
 pi-coding-agent already ships a built-in `kimi-coding` provider (see [`pi.dev/docs/.../providers`](https://pi.dev/docs/latest/providers)). It works, but it's a thin generic Anthropic-protocol binding to `api.kimi.com/coding`. Three concrete things you lose by using it:
 
-- **Kimi server-side prompt cache never hits.** The built-in provider only emits Anthropic's standard `cache_control` markers, which the Kimi server does not honor. This extension injects `prompt_cache_key` (Kimi's native session-cache field) so cache reads on the Coding Plan actually fire. Without it, every turn pays full prompt cost.
+- **Browser-based account login + `kimi-cli` session reuse.** The built-in provider authenticates via `KIMI_API_KEY` only. This extension adds the OAuth device-code flow and transparently picks up an existing `kimi-cli` session from `~/.kimi/credentials/kimi-code.json`, so your Kimi Code Plan login carries over from the official CLI.
 - **Images and videos are inlined as base64.** The built-in provider has no integration with Kimi's `/files` upload endpoint, so multimedia is sent inline as base64 in `messages`, counted toward your token budget and capped by request-size limits. This extension uploads images over `KIMI_CODE_UPLOAD_THRESHOLD_BYTES` (default 1 MB) and all videos to `/files`, references them by `ms://` id, and pays only the file-storage cost instead of token cost.
 - **OpenAI-compatible mode of the Coding endpoint is not exposed.** The built-in `kimi-coding` provider is Anthropic-only on `api.kimi.com/coding`. Kimi For Coding also serves an OpenAI-compatible variant at `api.kimi.com/coding/v1` — useful when something in your toolchain expects `role: "tool"` semantics, or when working around the [tool_result misread issue](https://github.com/Leechael/pi-provider-kimi-code/issues/5) under the Anthropic protocol. Opt in with `KIMI_CODE_PROTOCOL=openai`. (Note: the `moonshotai` / `moonshotai-cn` providers in `pi` are a different product — Moonshot's pay-per-token Open Platform, not the Coding Plan.)
+
+> On prompt caching: the built-in provider works fine. Kimi's Coding endpoint caches by content prefix hash automatically — neither `cache_control` markers nor `prompt_cache_key` actually drive cache hits. See [docs/caching.md](docs/caching.md) for measurements.
 
 ## Who is this for?
 
@@ -28,7 +30,7 @@ Pay-per-token via `KIMI_API_KEY` also works if you just want to try Kimi in CI o
 - **Reuses an existing `kimi-cli` session** — if you already signed in with the official `kimi-cli`, the extension picks up the token from `~/.kimi/credentials/kimi-code.json` and skips the device-code dance entirely.
 - **Live model metadata** — name, context window, and reasoning / image-input capabilities are refreshed from Kimi's `/v1/models` endpoint at every login / refresh, so server-side rollouts (e.g. expanded context) take effect without a provider release.
 - **262K-token context window** on the registered model (overridable; see [`docs/ENV.md`](docs/ENV.md)).
-- **Automatic prompt caching** — binds Kimi's prompt cache to your pi session so repeated calls hit the cache cheaply (observed TTL ~5-10 minutes). Honors pi's `PI_CACHE_RETENTION=none` if you want to disable caching entirely.
+- **Automatic prompt caching** — Kimi's Coding endpoint caches by content prefix hash with TTL ≥ 5 minutes (the extension does not have to do anything to make it work). `prompt_cache_key` is still injected for parity with upstream `kimi-cli` but has no measurable effect on cache hits. See [docs/caching.md](docs/caching.md) for the empirical breakdown.
 - **Automatic large-image upload** — images over 1 MB are uploaded to Kimi's `/v1/files` endpoint and referenced by `ms://` id, so you don't hit inline payload limits.
 - **Works with both Anthropic- and OpenAI-compatible modes** — use whichever one your pi setup expects.
 - **Stream cleaning** — Kimi occasionally leaks placeholder blocks into the stream during thinking phases; this extension catches and hides them so your pi UI stays clean.
@@ -157,7 +159,15 @@ This extension uploads images over `KIMI_CODE_UPLOAD_THRESHOLD_BYTES` (default 1
 
 ### Prompt cache never seems to hit
 
-The cache is keyed off your pi session, which changes between sessions. Long-lived sessions get cache hits within a few minutes; cold sessions won't. Also check `PI_CACHE_RETENTION` — if it's set to `none`, this extension intentionally skips cache-key injection. For deterministic measurement, run the cache-TTL probe with a fixed key — see [docs/TESTING.md](docs/TESTING.md).
+Kimi's cache is **content-based**: it fires automatically when your prompt prefix matches an earlier request, independent of any explicit cache key. If `cache_read_input_tokens` (Anthropic) or `cached_tokens` (OpenAI) stays at `0` across calls, something in the prompt is varying between turns. The usual suspects:
+
+- On the Anthropic-compat endpoint, the `system` prompt or the `tools` array changed (e.g. an MCP plugin loaded mid-session). Either fully invalidates the cache — see [docs/caching.md](docs/caching.md), Finding 11. OpenAI-compat endpoint not yet measured for this scenario.
+- An `image_url` reference (`ms://<file_id>`) changed between turns. Same rule — see Finding 17.
+- You're comparing across two cold `pi` invocations, not within a single session. Cache benefits accrue **within** a session; pi's system/tools assembly drifts between sessions. See Finding 18.
+- A timestamp, request ID, or randomized header is being interpolated into the prompt.
+- The first ~256 tokens of the prompt differ between turns.
+
+`PI_CACHE_RETENTION=none` skips `prompt_cache_key` injection but **does not** disable Kimi's caching (the cache is unconditional). For deterministic measurement, run `scripts/test_e2e.sh` with `KIMI_E2E_ONLY_CACHE=1`. See [docs/caching.md](docs/caching.md) for full mechanics.
 
 ### OpenAI-compatible tools complain about a `developer` role
 
@@ -169,6 +179,7 @@ In OpenAI mode this extension maps the `developer` role to `system` (Kimi's Codi
 - Upstream login implementation and feature request: [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) · [kimi-cli#757](https://github.com/MoonshotAI/kimi-cli/issues/757)
 - Environment variables: [docs/ENV.md](docs/ENV.md)
 - Testing guide: [docs/TESTING.md](docs/TESTING.md)
+- Cache behavior (empirical): [docs/caching.md](docs/caching.md)
 - Architecture notes: [docs/architecture.md](docs/architecture.md)
 
 ## Credits
