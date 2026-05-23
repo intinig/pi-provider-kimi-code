@@ -19,10 +19,7 @@ import {
 } from "@earendil-works/pi-ai";
 
 import { PROTOCOL } from "./constants.ts";
-import {
-  isKimiAuthErrorMessage,
-  refreshKimiAuthToken,
-} from "./oauth.ts";
+import { isKimiAuthErrorMessage, refreshKimiAuthToken } from "./oauth.ts";
 import {
   type Uploader,
   applyKimiPayloadMutations,
@@ -244,7 +241,9 @@ export function streamSimpleKimi(
         }
 
         // Stream ended normally: flush any remaining buffered starts.
-        for (const e of prefixBuffer) filtered.push(e);
+        if (!shouldRetry) {
+          for (const e of prefixBuffer) filtered.push(e);
+        }
       } catch (err) {
         // Upstream threw rather than emitting a stream `error` event. This can
         // be the same stale-token 401 surfaced as an exception (depending on
