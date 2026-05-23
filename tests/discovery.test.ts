@@ -6,7 +6,12 @@ import {
   applyKimiOAuthExtrasToModel,
   discoverKimiModelMetadata,
 } from "../src/models.ts";
-import { isKimiAuthErrorMessage, refreshAccessToken } from "../src/oauth.ts";
+import {
+  isKimiAuthErrorMessage,
+  refreshAccessToken,
+  requestDeviceAuthorization,
+  requestDeviceToken,
+} from "../src/oauth.ts";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -48,6 +53,8 @@ beforeEach(() => {
   delete process.env.KIMI_MODEL_NAME;
   delete process.env.KIMI_MODEL_MAX_CONTEXT_SIZE;
   delete process.env.KIMI_MODEL_CAPABILITIES;
+  delete process.env.KIMI_CODE_OAUTH_HOST;
+  delete process.env.KIMI_OAUTH_HOST;
 });
 
 describe("discoverKimiModelMetadata", () => {
@@ -255,6 +262,40 @@ describe("applyKimiEnvOverridesToModel", () => {
 
     assert.equal(result.reasoning, false);
     assert.deepEqual(result.input, ["text", "image"]);
+  });
+});
+
+describe("device authorization", () => {
+  it("accepts responses that only include verification_uri", async () => {
+    mock = mockFetch(() =>
+      jsonResponse({
+        user_code: "ABCD-EFGH",
+        device_code: "device-1",
+        verification_uri: "https://auth.example.com/device",
+        expires_in: 600,
+        interval: 5,
+      }),
+    );
+
+    const auth = await requestDeviceAuthorization();
+
+    assert.equal(auth.verification_uri, "https://auth.example.com/device");
+    assert.equal(auth.verification_uri_complete, "https://auth.example.com/device");
+  });
+
+  it("treats slow_down as a polling state", async () => {
+    mock = mockFetch(() => jsonResponse({ error: "slow_down" }, 400));
+
+    const result = await requestDeviceToken({
+      user_code: "ABCD-EFGH",
+      device_code: "device-1",
+      verification_uri: "https://auth.example.com/device",
+      verification_uri_complete: "https://auth.example.com/device?user_code=ABCD-EFGH",
+      expires_in: 600,
+      interval: 5,
+    });
+
+    assert.equal(result, "slow_down");
   });
 });
 

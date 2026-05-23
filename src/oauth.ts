@@ -10,23 +10,15 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-a
 import type { OAuthCredential } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
-import {
-  CLIENT_ID,
-  PROVIDER_ID,
-  RETRYABLE_REFRESH_STATUSES,
-  getOAuthHost,
-} from "./constants.ts";
+import { CLIENT_ID, PROVIDER_ID, RETRYABLE_REFRESH_STATUSES, getOAuthHost } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
-import {
-  type KimiOAuthCredentials,
-  discoverKimiModelMetadata,
-} from "./models.ts";
+import { type KimiOAuthCredentials, discoverKimiModelMetadata } from "./models.ts";
 
 // =============================================================================
 // Device flow + token endpoint
 // =============================================================================
 
-interface DeviceAuthorization {
+export interface DeviceAuthorization {
   user_code: string;
   device_code: string;
   verification_uri: string;
@@ -43,7 +35,7 @@ interface TokenResponse {
   token_type: string;
 }
 
-async function requestDeviceAuthorization(): Promise<DeviceAuthorization> {
+export async function requestDeviceAuthorization(): Promise<DeviceAuthorization> {
   const response = await fetch(`${getOAuthHost()}/api/oauth/device_authorization`, {
     method: "POST",
     headers: {
@@ -69,21 +61,24 @@ async function requestDeviceAuthorization(): Promise<DeviceAuthorization> {
     interval?: number;
   };
 
-  if (!data.user_code || !data.device_code || !data.verification_uri_complete) {
+  const verificationUrl = data.verification_uri_complete || data.verification_uri;
+  if (!data.user_code || !data.device_code || !verificationUrl) {
     throw new Error("Invalid device authorization response");
   }
 
   return {
     user_code: data.user_code,
     device_code: data.device_code,
-    verification_uri: data.verification_uri || "",
-    verification_uri_complete: data.verification_uri_complete,
+    verification_uri: data.verification_uri || verificationUrl,
+    verification_uri_complete: verificationUrl,
     expires_in: data.expires_in || 1800,
     interval: data.interval || 5,
   };
 }
 
-async function requestDeviceToken(auth: DeviceAuthorization): Promise<TokenResponse | null> {
+export async function requestDeviceToken(
+  auth: DeviceAuthorization,
+): Promise<TokenResponse | "slow_down" | null> {
   const response = await fetch(`${getOAuthHost()}/api/oauth/token`, {
     method: "POST",
     headers: {
@@ -109,6 +104,9 @@ async function requestDeviceToken(auth: DeviceAuthorization): Promise<TokenRespo
     const data = (await response.json()) as { error?: string; error_description?: string };
     if (data.error === "authorization_pending") {
       return null;
+    }
+    if (data.error === "slow_down") {
+      return "slow_down";
     }
     if (data.error === "expired_token") {
       throw new Error("expired_token");
@@ -260,9 +258,7 @@ async function tryReuseKimiCliCredentials(
 // OAuth login / refresh for extension registration
 // =============================================================================
 
-export async function loginKimiCode(
-  callbacks: OAuthLoginCallbacks,
-): Promise<KimiOAuthCredentials> {
+export async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<KimiOAuthCredentials> {
   const reused = await tryReuseKimiCliCredentials(callbacks);
   if (reused) return reused;
 
@@ -275,7 +271,7 @@ export async function loginKimiCode(
       instructions: `Please visit the URL to authorize. Your code: ${auth.user_code}`,
     });
 
-    const interval = Math.max(auth.interval, 1) * 1000;
+    let interval = Math.max(auth.interval, 1) * 1000;
     const expiresAt = Date.now() + auth.expires_in * 1000;
 
     let token: TokenResponse | null = null;
@@ -283,8 +279,13 @@ export async function loginKimiCode(
 
     while (Date.now() < expiresAt) {
       try {
-        token = await requestDeviceToken(auth);
-        if (token) break;
+        const result = await requestDeviceToken(auth);
+        if (result === "slow_down") {
+          interval += 5000;
+        } else {
+          token = result;
+          if (token) break;
+        }
       } catch (error) {
         if (error instanceof Error && error.message === "expired_token") {
           // Device code expired, restart the flow
