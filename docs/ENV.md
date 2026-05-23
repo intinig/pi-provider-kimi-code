@@ -15,7 +15,7 @@
 | `KIMI_BASE_URL` | Alias for `KIMI_CODE_BASE_URL`. Accepted for compatibility with upstream `kimi-cli`, which uses this name. `KIMI_CODE_BASE_URL` wins if both are set. |
 | `KIMI_CODE_OAUTH_HOST` | Override the OAuth host. |
 | `KIMI_OAUTH_HOST` | Fallback OAuth host override for compatibility. |
-| `KIMI_CODE_PROTOCOL` | Select the wire protocol. `openai` → `openai-completions` via `/coding/v1/chat/completions`. Any other value (including unset) → `anthropic-messages` via `/coding/v1/messages`. |
+| `KIMI_CODE_PROTOCOL` | Select the wire protocol. Supported values: `openai` (default) or `anthropic`. `openai` → `openai-completions` via `/coding/v1/chat/completions`; `anthropic` → `anthropic-messages` via `/coding/v1/messages`. Any value other than `anthropic` is treated as `openai`. |
 
 ## Uploads
 

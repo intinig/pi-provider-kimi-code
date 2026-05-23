@@ -9,18 +9,20 @@ import { join } from "node:path";
 export const CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
 export const DEFAULT_OAUTH_HOST = "https://auth.kimi.com";
 
-export const PROTOCOL =
-  process.env.KIMI_CODE_PROTOCOL === "openai" ? "openai-completions" : "anthropic-messages";
+// KIMI_CODE_PROTOCOL supports two values: "openai" (default) and "anthropic".
+export const IS_OPENAI_PROTOCOL = process.env.KIMI_CODE_PROTOCOL !== "anthropic";
+
+export const PROTOCOL = IS_OPENAI_PROTOCOL ? "openai-completions" : "anthropic-messages";
 
 // Use a custom api identifier so this provider never conflicts with the
 // built-in "anthropic-messages" or "openai-completions" stream handlers.
-export const KIMI_API_TYPE =
-  PROTOCOL === "openai-completions" ? "kimi-openai-completions" : "kimi-anthropic-messages";
+export const KIMI_API_TYPE = IS_OPENAI_PROTOCOL
+  ? "kimi-openai-completions"
+  : "kimi-anthropic-messages";
 
-export const DEFAULT_BASE_URL =
-  PROTOCOL === "openai-completions"
-    ? "https://api.kimi.com/coding/v1"
-    : "https://api.kimi.com/coding";
+export const DEFAULT_BASE_URL = IS_OPENAI_PROTOCOL
+  ? "https://api.kimi.com/coding/v1"
+  : "https://api.kimi.com/coding";
 
 export const KIMI_CLI_VERSION = "1.44.0";
 export const KIMI_CLI_USER_AGENT = `KimiCLI/${KIMI_CLI_VERSION}`;
