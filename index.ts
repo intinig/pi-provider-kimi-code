@@ -83,9 +83,17 @@ export default function (pi: ExtensionAPI) {
   });
 
   if (config.tools.moonshot_search.enabled) {
-    pi.registerTool(buildMoonshotSearchTool());
+    pi.registerTool(
+      buildMoonshotSearchTool({
+        defaultCollapsed: config.tools.moonshot_search.default_collapsed,
+      }),
+    );
   }
   if (config.tools.moonshot_fetch.enabled) {
-    pi.registerTool(buildMoonshotFetchTool());
+    pi.registerTool(
+      buildMoonshotFetchTool({
+        defaultCollapsed: config.tools.moonshot_fetch.default_collapsed,
+      }),
+    );
   }
 }

@@ -51,6 +51,7 @@ interface MoonshotToolDeps {
 
 export interface BuildMoonshotToolOptions {
   deps?: Partial<MoonshotToolDeps>;
+  defaultCollapsed?: boolean;
 }
 
 interface MoonshotSearchResponse {
@@ -140,12 +141,64 @@ function searchResultsText(results: MoonshotSearchResult[]): string {
   return JSON.stringify(results, null, 2);
 }
 
+function textComponent(text: string) {
+  return {
+    render: () => text.split("\n"),
+    invalidate: () => {},
+  };
+}
+
+function firstText(result: AgentToolResult<unknown>): string {
+  const first = result.content[0];
+  return first?.type === "text" ? first.text : "";
+}
+
+function shouldCollapse(defaultCollapsed: boolean, expanded: boolean | undefined): boolean {
+  return defaultCollapsed && expanded !== true;
+}
+
+function renderSearchResult(
+  result: AgentToolResult<MoonshotSearchResult[]>,
+  expanded: boolean | undefined,
+  defaultCollapsed: boolean,
+) {
+  if (!Array.isArray(result.details)) {
+    return textComponent(firstText(result));
+  }
+  if (!shouldCollapse(defaultCollapsed, expanded)) {
+    return textComponent(searchResultsText(result.details));
+  }
+
+  const count = result.details.length;
+  const first = result.details[0];
+  const suffix = first ? `; first: ${first.title || first.url}` : "";
+  return textComponent(`moonshot_search returned ${count} result(s)${suffix}`);
+}
+
+function renderFetchResult(
+  result: AgentToolResult<MoonshotFetchResult>,
+  expanded: boolean | undefined,
+  defaultCollapsed: boolean,
+) {
+  if (!result.details) {
+    return textComponent(firstText(result));
+  }
+  if (!shouldCollapse(defaultCollapsed, expanded)) {
+    return textComponent(result.details.content);
+  }
+
+  return textComponent(
+    `moonshot_fetch fetched ${result.details.url} (${result.details.content.length} chars)`,
+  );
+}
+
 async function readErrorBody(response: Response): Promise<string> {
   return response.text().catch(() => "");
 }
 
 export function buildMoonshotSearchTool(options: BuildMoonshotToolOptions = {}) {
   const deps = buildDeps(options);
+  const defaultCollapsed = options.defaultCollapsed ?? true;
 
   return defineTool({
     name: "moonshot_search",
@@ -198,11 +251,16 @@ export function buildMoonshotSearchTool(options: BuildMoonshotToolOptions = {}) 
         timeout.cleanup();
       }
     },
+
+    renderResult(result, renderOptions) {
+      return renderSearchResult(result, renderOptions.expanded, defaultCollapsed);
+    },
   });
 }
 
 export function buildMoonshotFetchTool(options: BuildMoonshotToolOptions = {}) {
   const deps = buildDeps(options);
+  const defaultCollapsed = options.defaultCollapsed ?? true;
 
   return defineTool({
     name: "moonshot_fetch",
@@ -249,6 +307,10 @@ export function buildMoonshotFetchTool(options: BuildMoonshotToolOptions = {}) {
       } finally {
         timeout.cleanup();
       }
+    },
+
+    renderResult(result, renderOptions) {
+      return renderFetchResult(result, renderOptions.expanded, defaultCollapsed);
     },
   });
 }

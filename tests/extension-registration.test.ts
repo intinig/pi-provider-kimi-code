@@ -57,7 +57,7 @@ describe("extension tool registration", () => {
       configPath,
       JSON.stringify({
         tools: {
-          moonshot_search: { enabled: true },
+          moonshot_search: { enabled: true, default_collapsed: false },
           moonshot_fetch: { enabled: false },
         },
       }),
@@ -71,5 +71,15 @@ describe("extension tool registration", () => {
       tools.map((tool) => tool.name),
       ["moonshot_search"],
     );
+    const component = tools[0].renderResult!(
+      {
+        content: [{ type: "text", text: "full json" }],
+        details: [{ title: "Example", url: "https://example.com", snippet: "Summary" }],
+      },
+      { expanded: false, isPartial: false },
+      undefined as never,
+      undefined as never,
+    );
+    assert.match(component.render(80).join("\n"), /"url": "https:\/\/example.com"/);
   });
 });

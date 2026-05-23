@@ -29,13 +29,13 @@ JSON, not JSONC. Comment support can be revisited in v2.
 ```json
 {
   "tools": {
-    "moonshot_search": { "enabled": false },
-    "moonshot_fetch": { "enabled": false }
+    "moonshot_search": { "enabled": false, "default_collapsed": true },
+    "moonshot_fetch": { "enabled": false, "default_collapsed": true }
   }
 }
 ```
 
-Defaults when keys are missing: `enabled: false` for both tools. Missing file is the same as `{}`.
+Defaults when keys are missing: `enabled: false` and `default_collapsed: true` for both tools. Missing file is the same as `{}`.
 
 Top-level shape is intentionally flat (`tools` namespace under root) so we can add sibling sections later (e.g. `model`, `upload`, `protocol`) without nesting churn.
 
@@ -94,7 +94,7 @@ extension entry:
   }
 ```
 
-When a tool is disabled, do not register it (rather than registering + hiding) — that keeps `/tools` listings clean for users who have not opted in.
+When a tool is disabled, do not register it (rather than registering + hiding) — that keeps the agent's available tool set clean for users who have not opted in.
 
 ## Tests
 
@@ -104,8 +104,8 @@ All under `tests/`, continuing to use `node:test`. No new devDeps.
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tests/config.test.ts`          | default when no file; global only; project overrides global; malformed JSON tolerated; only `tools.moonshot_search.enabled` set still produces a full default-shaped object |
 | `tests/extension-registration.test.ts` | missing config registers no Moonshot tools; enabled config registers only the selected Moonshot tools                                                                  |
-| `tests/moonshot-search.test.ts` | mock `fetch` to validate URL + body + headers shape; result-shape mapping; missing OAuth returns an error result                                                            |
-| `tests/moonshot-fetch.test.ts`  | same envelope as search; exact body field name confirmed against upstream; non-2xx service responses do not fall back to local fetch                                        |
+| `tests/moonshot-search.test.ts` | mock `fetch` to validate URL + body + headers shape; result-shape mapping; missing OAuth returns an error result; collapsed TUI rendering                                  |
+| `tests/moonshot-fetch.test.ts`  | same envelope as search; exact body field name confirmed against upstream; non-2xx service responses do not fall back to local fetch; collapsed TUI rendering                |
 
 ## Documentation
 
@@ -143,15 +143,15 @@ Branch must base off `main` _after_ `feat/upstream-alignment` is merged. Do not 
 ## Risks / open questions
 
 - **`moonshot_fetch` body schema**: confirmed against `kimi-cli/src/kimi_cli/tools/web/fetch.py`; upstream service request body is `{ url }`.
-- **Tool naming**: `moonshot_search` matches the upstream service name. If we want a name that reads better in `/tools` (e.g. `kimi_web_search`), align it now to avoid rename later.
-- **`/tools` discoverability**: opt-in by config file is the safest default but reduces discoverability. Consider mentioning in README that `/tools list` won't show these until enabled.
+- **Tool naming**: `moonshot_search` matches the upstream service name. If we want a more user-facing name (e.g. `kimi_web_search`), align it now to avoid rename later.
+- **Tool discoverability**: opt-in by config file is the safest default but reduces discoverability. README notes that these tools are only available after config enables them.
 - **MCP overlap**: if the user already has an MCP server providing web search/fetch, enabling these creates two competing tools the model could pick from. The README should explicitly recommend picking one or the other.
 
 ## Definition of done
 
 - `pi-provider-kimi-code.json` is read from both tiers; project overrides global.
 - With an empty / missing config file, the provider behaves exactly as today (zero new tools registered, no new dependencies, no observable change).
-- With `tools.moonshot_search.enabled: true` and a logged-in user, `moonshot_search` appears in `/tools` and successfully returns results for a simple query.
+- With `tools.moonshot_search.enabled: true` and a logged-in user, `moonshot_search` is available to the agent and successfully returns results for a simple query.
 - Same with `moonshot_fetch`.
 - README explains the file and both tools.
 - All existing tests still pass, new tests cover the loader and both tools' HTTP shape.

@@ -158,7 +158,6 @@ Both tools require `/login kimi-coding` OAuth credentials and an active Kimi Cod
 
 If you already use MCP-provided web search or fetch tools, pick one path for a session. Enabling both gives the model overlapping tools; these Moonshot tools are only available to the agent after the config file enables them.
 
-
 ## Notes
 
 ### Kimi CLI vs Pi

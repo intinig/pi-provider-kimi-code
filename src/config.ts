@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 export interface KimiCodeConfig {
   tools: {
-    moonshot_search: { enabled: boolean };
-    moonshot_fetch: { enabled: boolean };
+    moonshot_search: { enabled: boolean; default_collapsed: boolean };
+    moonshot_fetch: { enabled: boolean; default_collapsed: boolean };
   };
 }
 
@@ -15,8 +15,8 @@ export interface LoadKimiCodeConfigOptions {
 
 export const DEFAULT_KIMI_CODE_CONFIG: KimiCodeConfig = {
   tools: {
-    moonshot_search: { enabled: false },
-    moonshot_fetch: { enabled: false },
+    moonshot_search: { enabled: false, default_collapsed: true },
+    moonshot_fetch: { enabled: false, default_collapsed: true },
   },
 };
 
@@ -67,6 +67,14 @@ function readEnabled(config: Record<string, unknown>, toolName: string): boolean
   return tool.enabled === true;
 }
 
+function readDefaultCollapsed(config: Record<string, unknown>, toolName: string): boolean {
+  const tools = config.tools;
+  if (!isRecord(tools)) return true;
+  const tool = tools[toolName];
+  if (!isRecord(tool)) return true;
+  return tool.default_collapsed !== false;
+}
+
 export function loadKimiCodeConfig(options: LoadKimiCodeConfigOptions): KimiCodeConfig {
   const globalConfig = readConfigFile(getGlobalKimiCodeConfigPath(options.home));
   const projectConfig = readConfigFile(getProjectKimiCodeConfigPath(options.cwd));
@@ -74,8 +82,14 @@ export function loadKimiCodeConfig(options: LoadKimiCodeConfigOptions): KimiCode
 
   return {
     tools: {
-      moonshot_search: { enabled: readEnabled(merged, "moonshot_search") },
-      moonshot_fetch: { enabled: readEnabled(merged, "moonshot_fetch") },
+      moonshot_search: {
+        enabled: readEnabled(merged, "moonshot_search"),
+        default_collapsed: readDefaultCollapsed(merged, "moonshot_search"),
+      },
+      moonshot_fetch: {
+        enabled: readEnabled(merged, "moonshot_fetch"),
+        default_collapsed: readDefaultCollapsed(merged, "moonshot_fetch"),
+      },
     },
   };
 }

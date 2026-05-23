@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 
 import { buildMoonshotFetchTool } from "../src/tools/moonshot.ts";
 
+function renderText(component: { render: (width: number) => string[] }): string {
+  return component.render(80).join("\n");
+}
+
 describe("moonshot_fetch", () => {
   it("posts the expected URL, headers, and body, then maps content", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -92,5 +96,38 @@ describe("moonshot_fetch", () => {
 
     assert.equal(callCount, 1);
     assert.match(result.content[0].type === "text" ? result.content[0].text : "", /403 forbidden/);
+  });
+
+  it("renders collapsed fetch content by default", () => {
+    const tool = buildMoonshotFetchTool();
+    const component = tool.renderResult!(
+      {
+        content: [{ type: "text", text: "Fetched content" }],
+        details: { url: "https://example.com/page", content: "Fetched content" },
+      },
+      { expanded: false, isPartial: false },
+      undefined as never,
+      undefined as never,
+    );
+
+    assert.equal(
+      renderText(component),
+      "moonshot_fetch fetched https://example.com/page (15 chars)",
+    );
+  });
+
+  it("can render fetch content expanded by default when configured", () => {
+    const tool = buildMoonshotFetchTool({ defaultCollapsed: false });
+    const component = tool.renderResult!(
+      {
+        content: [{ type: "text", text: "Fetched content" }],
+        details: { url: "https://example.com/page", content: "Fetched content" },
+      },
+      { expanded: false, isPartial: false },
+      undefined as never,
+      undefined as never,
+    );
+
+    assert.equal(renderText(component), "Fetched content");
   });
 });

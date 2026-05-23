@@ -22,8 +22,8 @@ describe("loadKimiCodeConfig", () => {
 
     assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
       tools: {
-        moonshot_search: { enabled: false },
-        moonshot_fetch: { enabled: false },
+        moonshot_search: { enabled: false, default_collapsed: true },
+        moonshot_fetch: { enabled: false, default_collapsed: true },
       },
     });
   });
@@ -37,8 +37,8 @@ describe("loadKimiCodeConfig", () => {
 
     assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
       tools: {
-        moonshot_search: { enabled: true },
-        moonshot_fetch: { enabled: false },
+        moonshot_search: { enabled: true, default_collapsed: true },
+        moonshot_fetch: { enabled: false, default_collapsed: true },
       },
     });
   });
@@ -58,8 +58,26 @@ describe("loadKimiCodeConfig", () => {
 
     assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
       tools: {
-        moonshot_search: { enabled: true },
-        moonshot_fetch: { enabled: true },
+        moonshot_search: { enabled: true, default_collapsed: true },
+        moonshot_fetch: { enabled: true, default_collapsed: true },
+      },
+    });
+  });
+
+  it("reads default_collapsed when explicitly configured", () => {
+    const cwd = tempDir("kimi-config-cwd");
+    const home = tempDir("kimi-config-home");
+    writeJson(join(cwd, ".pi", "pi-provider-kimi-code.json"), {
+      tools: {
+        moonshot_search: { enabled: true, default_collapsed: false },
+        moonshot_fetch: { enabled: false, default_collapsed: true },
+      },
+    });
+
+    assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
+      tools: {
+        moonshot_search: { enabled: true, default_collapsed: false },
+        moonshot_fetch: { enabled: false, default_collapsed: true },
       },
     });
   });
@@ -76,8 +94,8 @@ describe("loadKimiCodeConfig", () => {
 
     assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
       tools: {
-        moonshot_search: { enabled: false },
-        moonshot_fetch: { enabled: false },
+        moonshot_search: { enabled: false, default_collapsed: true },
+        moonshot_fetch: { enabled: false, default_collapsed: true },
       },
     });
   });
@@ -95,8 +113,8 @@ describe("loadKimiCodeConfig", () => {
     try {
       assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
         tools: {
-          moonshot_search: { enabled: false },
-          moonshot_fetch: { enabled: false },
+          moonshot_search: { enabled: false, default_collapsed: true },
+          moonshot_fetch: { enabled: false, default_collapsed: true },
         },
       });
       assert.equal(errors.length, 1);
@@ -114,8 +132,8 @@ describe("loadKimiCodeConfig", () => {
 
     assert.deepEqual(loadKimiCodeConfig({ cwd, home }), {
       tools: {
-        moonshot_search: { enabled: true },
-        moonshot_fetch: { enabled: false },
+        moonshot_search: { enabled: true, default_collapsed: true },
+        moonshot_fetch: { enabled: false, default_collapsed: true },
       },
     });
   });
