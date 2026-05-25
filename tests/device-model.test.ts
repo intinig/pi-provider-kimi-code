@@ -2,9 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { computeDeviceModel } from "../src/device.ts";
 
-// Mirror upstream kimi-cli `_device_model()` formatting per OS so that the
-// X-Msh-Device-Model header reported by this provider stays in lockstep with
-// what the Python CLI sends.
+// Mirror upstream Kimi Code identity formatting per OS so that the
+// X-Msh-Device-Model header reported by this provider stays in lockstep.
 
 describe("computeDeviceModel", () => {
   it("macOS: prefers explicit macVersion over release", () => {

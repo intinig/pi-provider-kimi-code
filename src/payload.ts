@@ -19,7 +19,7 @@ export type Uploader = (mimeType: string, data: string) => Promise<string | null
 export interface KimiEnvOverrides {
   temperature?: number;
   topP?: number;
-  maxTokens?: number;
+  maxCompletionTokens?: number;
 }
 
 export function resolveCacheRetention(value?: CacheRetention): CacheRetention {
@@ -87,8 +87,9 @@ export function readEnvOverrides(): KimiEnvOverrides {
   if (temp) out.temperature = parseFloat(temp);
   const topP = process.env.KIMI_MODEL_TOP_P;
   if (topP) out.topP = parseFloat(topP);
-  const maxTokens = process.env.KIMI_MODEL_MAX_TOKENS;
-  if (maxTokens) out.maxTokens = parseInt(maxTokens, 10);
+  const maxCompletionTokens =
+    process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS ?? process.env.KIMI_MODEL_MAX_TOKENS;
+  if (maxCompletionTokens) out.maxCompletionTokens = parseInt(maxCompletionTokens, 10);
   return out;
 }
 
@@ -421,10 +422,13 @@ export async function applyKimiPayloadMutations(
   }
 
   // 4. Env-level hyperparameter overrides (pre-parsed into numbers by caller).
-  const { temperature, topP, maxTokens } = ctx.envOverrides;
+  const { temperature, topP, maxCompletionTokens } = ctx.envOverrides;
   if (temperature !== undefined) payload.temperature = temperature;
   if (topP !== undefined) payload.top_p = topP;
-  if (maxTokens !== undefined) payload.max_tokens = maxTokens;
+  if (maxCompletionTokens !== undefined) {
+    payload.max_completion_tokens = maxCompletionTokens;
+    delete payload.max_tokens;
+  }
 
   // 5. Reasoning effort mapping.
   if (ctx.reasoning) {

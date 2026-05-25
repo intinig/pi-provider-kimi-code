@@ -6,7 +6,7 @@ import { buildModelsUrl } from "../src/models.ts";
 
 describe("asciiHeaderValue", () => {
   it("passes ASCII strings through unchanged", () => {
-    assert.equal(asciiHeaderValue("KimiCLI/1.44.0"), "KimiCLI/1.44.0");
+    assert.equal(asciiHeaderValue("kimi-code-cli/0.1.1"), "kimi-code-cli/0.1.1");
   });
 
   it("strips non-ASCII characters", () => {
@@ -19,7 +19,7 @@ describe("asciiHeaderValue", () => {
   });
 
   it("trims surrounding whitespace", () => {
-    assert.equal(asciiHeaderValue("  KimiCLI/1.44.0  "), "KimiCLI/1.44.0");
+    assert.equal(asciiHeaderValue("  kimi-code-cli/0.1.1  "), "kimi-code-cli/0.1.1");
   });
 });
 
@@ -58,7 +58,7 @@ describe("buildModelsUrl", () => {
 });
 
 describe("getOsVersion", () => {
-  it("uses Node's OS version string, matching upstream platform.version semantics", () => {
-    assert.equal(getOsVersion(), os.version());
+  it("uses Node's OS release string, matching upstream Kimi Code identity headers", () => {
+    assert.equal(getOsVersion(), os.release());
   });
 });
