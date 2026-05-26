@@ -1,4 +1,4 @@
-// OAuth subsystem: device flow, refresh-with-retry, kimi-cli credential
+// OAuth subsystem: device flow, refresh-with-retry, Kimi credential
 // reuse, the login / refresh handlers wired into pi's OAuth interface, and
 // the stream-level auth refresh used by the streaming handler.
 
@@ -183,13 +183,13 @@ export async function refreshAccessToken(
 }
 
 // =============================================================================
-// Reuse existing kimi-cli credentials
+// Reuse existing Kimi credentials
 //
-// Users who already ran the upstream `kimi-cli` and signed in have a valid
-// OAuth token sitting at `$KIMI_SHARE_DIR/credentials/kimi-code.json`
-// (defaults to `~/.kimi/...`). Loading it lets users skip the device-flow
-// dance entirely. Read-only: we never overwrite kimi-cli's file, only seed
-// pi's auth.json via the value returned to pi's OAuth callback.
+// Users who already ran the upstream Kimi Code CLI and signed in have a valid
+// OAuth token under `$KIMI_CODE_HOME/credentials/kimi-code.json` (defaults to
+// `~/.kimi-code/...`). We also keep read-only support for legacy kimi-cli
+// credentials under `$KIMI_SHARE_DIR/credentials/kimi-code.json` (defaults to
+// `~/.kimi/...`). Loading either lets users skip the device-flow dance.
 // =============================================================================
 
 interface KimiCliCredentialsFile {
@@ -198,21 +198,27 @@ interface KimiCliCredentialsFile {
   expires_at?: number; // Unix seconds (upstream convention)
 }
 
-function getKimiCliCredentialsPath(): string {
+function getKimiCredentialPaths(): string[] {
+  const kimiCodeHome = process.env.KIMI_CODE_HOME || join(os.homedir(), ".kimi-code");
   const shareDir = process.env.KIMI_SHARE_DIR || join(os.homedir(), ".kimi");
-  return join(shareDir, "credentials", "kimi-code.json");
+  return [
+    join(kimiCodeHome, "credentials", "kimi-code.json"),
+    join(shareDir, "credentials", "kimi-code.json"),
+  ];
 }
 
 function readKimiCliCredentials(): KimiCliCredentialsFile | null {
-  const path = getKimiCliCredentialsPath();
-  try {
-    if (!existsSync(path)) return null;
-    const data = JSON.parse(readFileSync(path, "utf-8")) as KimiCliCredentialsFile;
-    if (!data.access_token || !data.refresh_token) return null;
-    return data;
-  } catch {
-    return null;
+  for (const path of getKimiCredentialPaths()) {
+    try {
+      if (!existsSync(path)) continue;
+      const data = JSON.parse(readFileSync(path, "utf-8")) as KimiCliCredentialsFile;
+      if (!data.access_token || !data.refresh_token) continue;
+      return data;
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 async function tryReuseKimiCliCredentials(
@@ -226,7 +232,7 @@ async function tryReuseKimiCliCredentials(
   // between this returning and the first API call.
   const stillFresh = expiresAtMs > Date.now() + 60_000;
 
-  callbacks.onProgress?.("Found existing kimi-cli credentials, reusing them.");
+  callbacks.onProgress?.("Found existing Kimi credentials, reusing them.");
 
   if (stillFresh) {
     const extras = await discoverKimiModelMetadata(data.access_token!);
@@ -238,7 +244,7 @@ async function tryReuseKimiCliCredentials(
     };
   }
 
-  callbacks.onProgress?.("kimi-cli access token expired, refreshing.");
+  callbacks.onProgress?.("Kimi access token expired, refreshing.");
   try {
     const token = await refreshAccessToken(data.refresh_token!);
     const extras = await discoverKimiModelMetadata(token.access_token);
@@ -249,7 +255,7 @@ async function tryReuseKimiCliCredentials(
       ...extras,
     };
   } catch {
-    callbacks.onProgress?.("Refresh of kimi-cli token failed, falling back to device flow.");
+    callbacks.onProgress?.("Refresh of Kimi token failed, falling back to device flow.");
     return null;
   }
 }

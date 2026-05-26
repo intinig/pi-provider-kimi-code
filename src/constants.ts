@@ -24,11 +24,17 @@ export const DEFAULT_BASE_URL = IS_OPENAI_PROTOCOL
   ? "https://api.kimi.com/coding/v1"
   : "https://api.kimi.com/coding";
 
-export const KIMI_CLI_VERSION = "1.44.0";
-export const KIMI_CLI_USER_AGENT = `KimiCLI/${KIMI_CLI_VERSION}`;
-export const KIMI_PLATFORM = "kimi_cli";
+export const KIMI_CODE_VERSION = "0.1.1";
+export const KIMI_CODE_USER_AGENT_PRODUCT = "kimi-code-cli";
+export const KIMI_CODE_USER_AGENT = `${KIMI_CODE_USER_AGENT_PRODUCT}/${KIMI_CODE_VERSION}`;
+export const KIMI_PLATFORM = "kimi-code-cli";
 
-export const DEVICE_ID_PATH = join(os.homedir(), ".pi", "providers", "kimi-coding", "device_id");
+export function getKimiCodeHome(): string {
+  const value = process.env.KIMI_CODE_HOME?.trim();
+  return value || join(os.homedir(), ".kimi-code");
+}
+
+export const DEVICE_ID_PATH = join(getKimiCodeHome(), "device_id");
 
 export const DEFAULT_KIMI_MODEL_INPUT = ["text", "image"] as const;
 

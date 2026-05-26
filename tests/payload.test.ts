@@ -5,6 +5,7 @@ import {
   applyKimiPayloadMutations,
   type JsonRecord,
   type KimiPayloadContext,
+  readEnvOverrides,
   resolveCacheRetention,
 } from "../src/payload.ts";
 import { filterEmptyResponseStream } from "../src/stream.ts";
@@ -290,6 +291,39 @@ describe("applyKimiPayloadMutations", () => {
     assert.deepEqual(disabledPayload.extra_body, {
       thinking: { type: "disabled" },
     });
+  });
+
+  it("writes max completion tokens instead of legacy max_tokens", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 128,
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({ envOverrides: { maxCompletionTokens: 32000 } }),
+    );
+
+    assert.equal(payload.max_tokens, undefined);
+    assert.equal(payload.max_completion_tokens, 32000);
+  });
+});
+
+describe("readEnvOverrides", () => {
+  it("prefers KIMI_MODEL_MAX_COMPLETION_TOKENS over legacy KIMI_MODEL_MAX_TOKENS", () => {
+    const oldCompletion = process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
+    const oldLegacy = process.env.KIMI_MODEL_MAX_TOKENS;
+    try {
+      process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS = "64000";
+      process.env.KIMI_MODEL_MAX_TOKENS = "32000";
+
+      assert.equal(readEnvOverrides().maxCompletionTokens, 64000);
+    } finally {
+      if (oldCompletion === undefined) delete process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
+      else process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS = oldCompletion;
+      if (oldLegacy === undefined) delete process.env.KIMI_MODEL_MAX_TOKENS;
+      else process.env.KIMI_MODEL_MAX_TOKENS = oldLegacy;
+    }
   });
 });
 

@@ -1,8 +1,7 @@
-// Device identification: device-id persistence, kimi-cli-compatible request
+// Device identification: device-id persistence, Kimi Code-compatible request
 // headers, and the cross-platform device-model string. Pure helpers live near
 // the side-effecting one-shots (file IO, exec) they support.
 
-import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -10,8 +9,8 @@ import { dirname } from "node:path";
 
 import {
   DEVICE_ID_PATH,
-  KIMI_CLI_USER_AGENT,
-  KIMI_CLI_VERSION,
+  KIMI_CODE_USER_AGENT,
+  KIMI_CODE_VERSION,
   KIMI_PLATFORM,
 } from "./constants.ts";
 
@@ -47,16 +46,8 @@ function persistDeviceId(deviceId: string): void {
   }
 }
 
-function getMacOSVersion(): string {
-  try {
-    return execSync("sw_vers -productVersion", { encoding: "utf8" }).trim();
-  } catch {
-    return os.release();
-  }
-}
-
 // Normalize Node's lower-case `process.platform` (`linux`, `freebsd`,
-// `sunos`...) to Python `platform.system()` casing used by upstream kimi-cli.
+// `sunos`...) to the canonical OS names used by Kimi Code identity headers.
 const SYSTEM_NAME: Record<string, string> = {
   aix: "AIX",
   freebsd: "FreeBSD",
@@ -73,8 +64,8 @@ export interface DeviceModelInput {
   macVersion?: string;
 }
 
-// Pure function exposed for tests. Mirror of upstream kimi-cli's
-// `_device_model()` in `src/kimi_cli/auth/oauth.py`.
+// Pure function exposed for tests. Mirrors upstream Kimi Code identity
+// formatting in `packages/oauth/src/identity.ts`.
 export function computeDeviceModel(input: DeviceModelInput): string {
   const { platform, release, arch, macVersion } = input;
   if (platform === "darwin") {
@@ -110,12 +101,11 @@ function getDeviceModel(): string {
     platform: process.platform,
     release: os.release(),
     arch: os.machine() || process.arch,
-    macVersion: process.platform === "darwin" ? getMacOSVersion() : undefined,
   });
 }
 
 export function getOsVersion(): string {
-  return os.version();
+  return os.release();
 }
 
 export function asciiHeaderValue(value: string, fallback = "unknown"): string {
@@ -150,9 +140,9 @@ function getStableDeviceId(): string {
 
 export function getCommonHeaders(): Record<string, string> {
   const headers = {
-    "User-Agent": KIMI_CLI_USER_AGENT,
+    "User-Agent": KIMI_CODE_USER_AGENT,
     "X-Msh-Platform": KIMI_PLATFORM,
-    "X-Msh-Version": KIMI_CLI_VERSION,
+    "X-Msh-Version": KIMI_CODE_VERSION,
     "X-Msh-Device-Name": os.hostname(),
     "X-Msh-Device-Model": DEVICE_MODEL,
     "X-Msh-Os-Version": getOsVersion(),
