@@ -293,7 +293,19 @@ describe("applyKimiPayloadMutations", () => {
     });
   });
 
-  it("writes max completion tokens instead of legacy max_tokens", async () => {
+  it("renames deprecated max_tokens to max_completion_tokens", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 128,
+    };
+
+    await applyKimiPayloadMutations(payload, baseCtx());
+
+    assert.equal(payload.max_tokens, undefined);
+    assert.equal(payload.max_completion_tokens, 128);
+  });
+
+  it("lets max completion token env override win over payload max_tokens", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
       max_tokens: 128,
@@ -310,13 +322,15 @@ describe("applyKimiPayloadMutations", () => {
 });
 
 describe("readEnvOverrides", () => {
-  it("prefers KIMI_MODEL_MAX_COMPLETION_TOKENS over legacy KIMI_MODEL_MAX_TOKENS", () => {
+  it("reads only KIMI_MODEL_MAX_COMPLETION_TOKENS for completion token caps", () => {
     const oldCompletion = process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
     const oldLegacy = process.env.KIMI_MODEL_MAX_TOKENS;
     try {
-      process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS = "64000";
+      delete process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
       process.env.KIMI_MODEL_MAX_TOKENS = "32000";
+      assert.equal(readEnvOverrides().maxCompletionTokens, undefined);
 
+      process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS = "64000";
       assert.equal(readEnvOverrides().maxCompletionTokens, 64000);
     } finally {
       if (oldCompletion === undefined) delete process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
