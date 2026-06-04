@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-ai";
 
 import { IS_OPENAI_PROTOCOL, PROTOCOL } from "./constants.ts";
+import { getCommonHeaders } from "./device.ts";
 import { isKimiAuthErrorMessage, refreshKimiAuthToken } from "./oauth.ts";
 import {
   type Uploader,
@@ -136,13 +137,24 @@ export async function* filterEmptyResponseStream(
 // Stream wrapper: orchestrates payload mutation + event filter
 // =============================================================================
 
+export function resolveKimiApiKey(apiKey: string | undefined): string {
+  if (apiKey === "$KIMI_API_KEY") {
+    return process.env.KIMI_API_KEY?.trim() || "";
+  }
+  return apiKey || process.env.KIMI_API_KEY || "";
+}
+
+export function mergeKimiRequestHeaders(headers?: Record<string, string>): Record<string, string> {
+  return { ...getCommonHeaders(), ...headers };
+}
+
 export function streamSimpleKimi(
   model: Model<Api>,
   context: Context,
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   const filtered = createAssistantMessageEventStream();
-  const initialKey = options?.apiKey || process.env.KIMI_API_KEY || "";
+  const initialKey = resolveKimiApiKey(options?.apiKey);
 
   const cacheKeyOverride = (
     options as (SimpleStreamOptions & { prompt_cache_key?: unknown }) | undefined
@@ -169,6 +181,7 @@ export function streamSimpleKimi(
     return {
       ...options,
       ...apiKeyOverride,
+      headers: mergeKimiRequestHeaders(options?.headers),
       onPayload: async (payload, modelData) => {
         let nextPayload: unknown = payload;
 

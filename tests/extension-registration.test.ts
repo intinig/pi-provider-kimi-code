@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
+  ProviderConfig,
   RegisteredCommand,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -29,11 +30,13 @@ function withCwd<T>(cwd: string, fn: () => T): T {
 function makePi() {
   const tools: ToolDefinition[] = [];
   const providers: string[] = [];
+  const providerConfigs = new Map<string, ProviderConfig>();
   const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
   let activeTools: string[] = [];
   const pi = {
-    registerProvider(name: string) {
+    registerProvider(name: string, config: ProviderConfig) {
       providers.push(name);
+      providerConfigs.set(name, config);
     },
     registerTool(tool: ToolDefinition) {
       const index = tools.findIndex((registered) => registered.name === tool.name);
@@ -57,6 +60,7 @@ function makePi() {
     commands,
     pi,
     providers,
+    providerConfigs,
     tools,
     getActiveTools: () => activeTools,
     setActiveTools: (toolNames: string[]) => {
@@ -78,6 +82,24 @@ describe("extension tool registration", () => {
       [],
     );
     assert.ok(commands.has("kimi-settings"));
+  });
+
+  it("registers KIMI_API_KEY with explicit pi config-value env syntax", () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+
+    withCwd(cwd, () => registerKimiCodeExtension(pi));
+
+    assert.equal(providerConfigs.get("kimi-coding")?.apiKey, "$KIMI_API_KEY");
+  });
+
+  it("does not register dynamic Kimi identity headers as pi config values", () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+
+    withCwd(cwd, () => registerKimiCodeExtension(pi));
+
+    assert.equal(providerConfigs.get("kimi-coding")?.headers, undefined);
   });
 
   it("registers only enabled Moonshot tools", () => {

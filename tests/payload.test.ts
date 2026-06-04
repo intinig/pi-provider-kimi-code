@@ -8,7 +8,11 @@ import {
   readEnvOverrides,
   resolveCacheRetention,
 } from "../src/payload.ts";
-import { filterEmptyResponseStream } from "../src/stream.ts";
+import {
+  filterEmptyResponseStream,
+  mergeKimiRequestHeaders,
+  resolveKimiApiKey,
+} from "../src/stream.ts";
 
 const baseCtx = (overrides: Partial<KimiPayloadContext> = {}): KimiPayloadContext => ({
   api: "anthropic-messages",
@@ -338,6 +342,35 @@ describe("readEnvOverrides", () => {
       if (oldLegacy === undefined) delete process.env.KIMI_MODEL_MAX_TOKENS;
       else process.env.KIMI_MODEL_MAX_TOKENS = oldLegacy;
     }
+  });
+});
+
+describe("resolveKimiApiKey", () => {
+  it("resolves explicit pi env syntax when old pi passes it through literally", () => {
+    const original = process.env.KIMI_API_KEY;
+    try {
+      process.env.KIMI_API_KEY = "env-key";
+
+      assert.equal(resolveKimiApiKey("$KIMI_API_KEY"), "env-key");
+    } finally {
+      if (original === undefined) delete process.env.KIMI_API_KEY;
+      else process.env.KIMI_API_KEY = original;
+    }
+  });
+
+  it("preserves resolved OAuth and API keys", () => {
+    assert.equal(resolveKimiApiKey("oauth-token"), "oauth-token");
+    assert.equal(resolveKimiApiKey("sk-api-key"), "sk-api-key");
+  });
+});
+
+describe("mergeKimiRequestHeaders", () => {
+  it("adds Kimi identity headers while preserving caller overrides", () => {
+    const headers = mergeKimiRequestHeaders({ "User-Agent": "custom-agent", "X-Custom": "yes" });
+
+    assert.equal(headers["User-Agent"], "custom-agent");
+    assert.equal(headers["X-Msh-Platform"], "kimi_code_cli");
+    assert.equal(headers["X-Custom"], "yes");
   });
 });
 
