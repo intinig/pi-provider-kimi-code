@@ -379,11 +379,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: getBaseUrl(),
-    apiKey: "KIMI_API_KEY",
+    apiKey: "$KIMI_API_KEY",
     api: KIMI_API_TYPE,
     streamSimple: streamSimpleKimi,
-
-    headers: getCommonHeaders(),
 
     models: [
       applyKimiEnvOverridesToModel({
