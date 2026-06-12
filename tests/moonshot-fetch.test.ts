@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 import { buildMoonshotFetchTool } from "../src/tools/moonshot.ts";
 
 function renderText(component: { render: (width: number) => string[] }): string {
@@ -48,6 +50,38 @@ describe("moonshot_fetch", () => {
       url: "https://example.com/page",
       content: "# Example\n\nFetched page",
     });
+  });
+
+  it("uses KIMI_CODE_BASE_URL when provided", async () => {
+    const original = process.env.KIMI_CODE_BASE_URL;
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const mockFetch: typeof fetch = async (input, init) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return new Response("Fetched content", {
+        status: 200,
+        headers: { "Content-Type": "text/markdown" },
+      });
+    };
+
+    try {
+      process.env.KIMI_CODE_BASE_URL = "https://proxy.example.com/kimi/v1";
+      const tool = buildMoonshotFetchTool({
+        deps: { fetch: mockFetch, getAccessToken: () => "oauth-token" },
+      });
+
+      await tool.execute(
+        "tool-call-2",
+        { url: "https://example.com/page" },
+        undefined,
+        undefined,
+        undefined as never,
+      );
+    } finally {
+      if (original === undefined) delete process.env.KIMI_CODE_BASE_URL;
+      else process.env.KIMI_CODE_BASE_URL = original;
+    }
+
+    assert.equal(calls[0].url, "https://proxy.example.com/kimi/v1/fetch");
   });
 
   it("refreshes OAuth credentials once on 401 and retries the fetch", async () => {
@@ -142,6 +176,27 @@ describe("moonshot_fetch", () => {
 
     assert.equal(callCount, 1);
     assert.match(result.content[0].type === "text" ? result.content[0].text : "", /403 forbidden/);
+  });
+
+  it("truncates long 403 error output to the render width", () => {
+    const tool = buildMoonshotFetchTool();
+    const component = tool.renderResult!(
+      {
+        content: [
+          {
+            type: "text",
+            text: 'Moonshot fetch failed: 403 {"error":{"type":"security_risk","message":"We consider the current URL poses a security risk and are unable to provide fetch service at this time."}}',
+          },
+        ],
+        details: undefined,
+      },
+      { expanded: false, isPartial: false },
+      undefined as never,
+      undefined as never,
+    );
+
+    const lines = component.render(80);
+    assert.ok(lines.every((line) => visibleWidth(line) <= 80));
   });
 
   it("renders collapsed fetch content by default", () => {

@@ -66,6 +66,38 @@ describe("moonshot_search", () => {
     ]);
   });
 
+  it("uses KIMI_CODE_BASE_URL when provided", async () => {
+    const original = process.env.KIMI_CODE_BASE_URL;
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const mockFetch: typeof fetch = async (input, init) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return new Response(JSON.stringify({ search_results: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    try {
+      process.env.KIMI_CODE_BASE_URL = "https://proxy.example.com/kimi";
+      const tool = buildMoonshotSearchTool({
+        deps: { fetch: mockFetch, getAccessToken: () => "oauth-token" },
+      });
+
+      await tool.execute(
+        "tool-call-1",
+        { query: "kimi code" },
+        undefined,
+        undefined,
+        undefined as never,
+      );
+    } finally {
+      if (original === undefined) delete process.env.KIMI_CODE_BASE_URL;
+      else process.env.KIMI_CODE_BASE_URL = original;
+    }
+
+    assert.equal(calls[0].url, "https://proxy.example.com/kimi/v1/search");
+  });
+
   it("refreshes OAuth credentials once on 401 and retries the search", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const mockFetch: typeof fetch = async (input, init) => {

@@ -18,7 +18,7 @@ Completions formats. The extension picks which wire protocol to use via the
 and `anthropic`. A `streamSimpleKimi()` wrapper sits on top of pi's built-in
 streaming to:
 
-- upload inline base64 images (and videos, OpenAI protocol only) to Kimi's `/v1/files` endpoint as `ms://` references
+- upload large inline base64 images to Kimi's `/v1/files` endpoint as `ms://` references
 - inject Kimi's proprietary `prompt_cache_key` alongside Anthropic `cache_control`
 - apply env-level hyperparameter overrides (`temperature`, `top_p`, `max_completion_tokens`)
 - map pi's `reasoning` level to Kimi's `reasoning_effort` + `extra_body.thinking`
@@ -80,9 +80,9 @@ fix for Linux / non-ASCII hostnames.
 
 ### Models
 
-| ID                | Name            | Reasoning | Input              | Context | Max Output |
-| ----------------- | --------------- | --------- | ------------------ | ------- | ---------- |
-| `kimi-for-coding` | Kimi for Coding | yes       | text, image, video | 262 144 | 32 000     |
+| ID                | Name            | Reasoning | Input       | Context | Max Output |
+| ----------------- | --------------- | --------- | ----------- | ------- | ---------- |
+| `kimi-for-coding` | Kimi for Coding | yes       | text, image | 262 144 | 32 000     |
 
 All costs are set to zero (free tier / OAuth-authenticated usage).
 
@@ -308,13 +308,13 @@ Every unit below can be tested without touching the network, the filesystem, or
 | `parseInlineUploadThreshold(raw)` | `string \| undefined` → bytes                                                             | Valid int, empty, `undefined`, negative, non-numeric   |
 | `deriveFilesBaseUrl(baseUrl)`     | Ensure the base URL ends with `/v1` (the `/files` suffix is appended by `uploadKimiFile`) | `/coding` vs `/coding/v1` vs trailing slash            |
 | `parseDataUrl(url)`               | Data URL regex → `{mimeType, data} \| null`                                               | Valid, missing `;base64,`, non-data URL                |
-| `getUploadFilename(mimeType)`     | MIME → filename                                                                           | Known MIMEs, generic `video/*`, unknown                |
+| `getUploadFilename(mimeType)`     | MIME → filename                                                                           | Known image MIMEs and unknown                          |
 
 #### Layer 2 — pure given injected dependencies
 
 | Function                                          | Contract                                                                                           | Fixture strategy                                                                                                                                                                                                                  |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `transformOpenAIPayloadFiles(payload, upload)`    | Replace inline base64 `image_url` / `video_url` fields with `ms://` refs                           | Build payload fixture, pass fake `upload = async () => "ms://fake"`, assert mutated payload. Cover: plain data URL, already `ms://`, mime that fails `parseDataUrl`, cache dedup for repeated URLs                                |
+| `transformOpenAIPayloadFiles(payload, upload)`    | Replace inline base64 `image_url` fields with `ms://` refs                                         | Build payload fixture, pass fake `upload = async () => "ms://fake"`, assert mutated payload. Cover: plain data URL, already `ms://`, mime that fails `parseDataUrl`, cache dedup for repeated URLs                                |
 | `transformAnthropicPayloadFiles(payload, upload)` | Replace base64 `image` blocks (including inside `tool_result`) with `{source: {type: "url", url}}` | Fixture with nested `tool_result.content`, assert recursive replacement + `cache_control` preservation                                                                                                                            |
 | `applyKimiPayloadMutations(payload, ctx)`         | Apply all 5 steps in order                                                                         | Table test per step: (a) developer→system, (b) upload dispatch by `ctx.api`, (c) cache_key precedence (existing > ctx.cacheKey > nothing), (d) env overrides only when set, (e) reasoning_effort only when `ctx.reasoning` is set |
 
