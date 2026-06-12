@@ -172,6 +172,9 @@ export function streamSimpleKimi(
   // the model object via modifyModels and rewritten into the request payload
   // here so /v1/chat/completions and /v1/messages see the real wire id.
   const wireModelId = (model as Model<Api> & { wireModelId?: unknown }).wireModelId;
+  const supportsThinkingType = (
+    model as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" }
+  ).supportsThinkingType;
 
   const buildPatchedOptions = (apiKey: string): SimpleStreamOptions => {
     const upload: Uploader | undefined = apiKey
@@ -196,6 +199,7 @@ export function streamSimpleKimi(
             reasoning: options?.reasoning,
             thinkingKeep,
             envOverrides,
+            supportsThinkingType,
           });
           if (
             typeof wireModelId === "string" &&
