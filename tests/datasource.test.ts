@@ -248,7 +248,7 @@ describe("kimi_datasource datasource", () => {
     const tool = buildKimiDatasourceTool({ defaultCollapsed: true });
     const component = tool.renderResult!(
       {
-        content: [{ type: "text", text: `\"# world_bank_open_data\\n${"x".repeat(300)}` }],
+        content: [{ type: "text", text: `"# world_bank_open_data\\n${"x".repeat(300)}` }],
         details: "",
       },
       { expanded: false, isPartial: false },

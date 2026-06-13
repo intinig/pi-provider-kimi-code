@@ -225,7 +225,8 @@ describe("extension tool registration", () => {
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       if (url.endsWith("/coding/v1/usages")) {
-        usageTokens.push(String((init?.headers as Record<string, string>).Authorization));
+        const headers = init?.headers as Record<string, string> | undefined;
+        usageTokens.push(String(headers?.Authorization ?? ""));
         if (usageTokens.length === 1) return new Response("expired", { status: 401 });
         return new Response(
           JSON.stringify({
