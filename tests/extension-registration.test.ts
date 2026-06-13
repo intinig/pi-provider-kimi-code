@@ -32,11 +32,16 @@ function withCwd<T>(cwd: string, fn: () => T): T {
 function withTempAuthFile(credential: Record<string, unknown>) {
   const dir = tempDir("pi-kimi-auth");
   writeFileSync(join(dir, "auth.json"), JSON.stringify({ [PROVIDER_ID]: credential }), "utf8");
+  const originalDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
   return {
     cleanup() {
       rmSync(dir, { recursive: true, force: true });
-      delete process.env.PI_CODING_AGENT_DIR;
+      if (originalDir === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalDir;
+      }
     },
   };
 }
@@ -230,6 +235,10 @@ describe("extension tool registration", () => {
         );
       }
       if (url.endsWith("/api/oauth/token")) {
+        const bodyText = String(init?.body ?? "");
+        const body = new URLSearchParams(bodyText);
+        assert.equal(body.get("grant_type"), "refresh_token");
+        assert.equal(body.get("refresh_token"), "refresh-1");
         return new Response(
           JSON.stringify({
             access_token: "fresh-access",

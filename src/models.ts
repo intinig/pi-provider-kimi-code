@@ -82,7 +82,7 @@ export function applyKimiOAuthExtrasToModel(
   extras: KimiOAuthExtras,
 ): Model<Api> {
   const next: Model<Api> & { wireModelId?: string; supportsThinkingType?: "only" | "no" | "both" } =
-    { ...model, supportsThinkingType: undefined };
+    { ...model };
   if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
     next.name = extras.modelDisplay;
   }
@@ -97,6 +97,7 @@ export function applyKimiOAuthExtrasToModel(
     next.supportsThinkingType = extras.supportsThinkingType;
   } else if (typeof extras.supportsReasoning === "boolean") {
     next.reasoning = extras.supportsReasoning;
+    next.supportsThinkingType = undefined;
   }
   if (typeof extras.supportsImageIn === "boolean") {
     const input = ["text"];

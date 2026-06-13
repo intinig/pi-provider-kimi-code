@@ -41,7 +41,7 @@ describe("kimi_datasource datasource", () => {
     assert.equal(calls[0].url, "https://api.kimi.com/coding/v1/tools");
     assert.deepEqual(JSON.parse(calls[0].init.body as string), {
       method: "get_data_source_desc",
-      params: { name: "arxiv" },
+      params: { data_source_name: "arxiv" },
     });
     assert.equal(
       result.content[0].type === "text" ? result.content[0].text : "",

@@ -4,7 +4,7 @@ Status: implemented in branch, not committed unless explicitly requested for thi
 
 ## Context record
 
-Upstream reviewed: `/Users/leechael/workshop/github/kimi-code` commits `933cf672..1cb49dba`.
+Upstream reviewed: `kimi-code` commits `933cf672..1cb49dba`.
 
 Relevant upstream additions:
 
