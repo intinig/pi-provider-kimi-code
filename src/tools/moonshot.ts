@@ -1,12 +1,19 @@
-import { AuthStorage, defineTool, type AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { defineTool, type AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@earendil-works/pi-ai";
 
-import { PROVIDER_ID } from "../constants.ts";
-import { getCommonHeaders } from "../device.ts";
-import { refreshKimiAuthToken } from "../oauth.ts";
-
-const MOONSHOT_BASE_V1 = "https://api.kimi.com/coding/v1";
-const MOONSHOT_TIMEOUT_MS = 180_000;
+import {
+  type BuildKimiToolOptions,
+  buildHeaders,
+  getKimiBaseV1,
+  buildKimiToolDeps,
+  buildTimeoutSignal,
+  errorResult,
+  fetchWithAuthRetry,
+  firstText,
+  readErrorBody,
+  shouldCollapse,
+  textComponent,
+} from "./common.ts";
 
 export const moonshotSearchSchema = Type.Object({
   query: Type.String({ description: "The query text to search for." }),
@@ -45,76 +52,13 @@ export interface MoonshotFetchResult {
   content: string;
 }
 
-interface MoonshotToolDeps {
-  fetch: typeof fetch;
-  getAccessToken: () => string | null;
-  refreshAccessToken: (currentToken: string) => Promise<string | null>;
-}
-
-export interface BuildMoonshotToolOptions {
-  deps?: Partial<MoonshotToolDeps>;
-  defaultCollapsed?: boolean;
-}
-
-interface MoonshotSearchResponse {
-  search_results?: unknown;
-}
-
-function defaultGetAccessToken(): string | null {
-  const credential = AuthStorage.create().get(PROVIDER_ID);
-  if (!credential || credential.type !== "oauth") return null;
-  return credential.access;
-}
-
-function buildDeps(options: BuildMoonshotToolOptions = {}): MoonshotToolDeps {
-  return {
-    fetch: options.deps?.fetch ?? fetch,
-    getAccessToken: options.deps?.getAccessToken ?? defaultGetAccessToken,
-    refreshAccessToken: options.deps?.refreshAccessToken ?? refreshKimiAuthToken,
-  };
-}
-
 function clampLimit(value: number | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 5;
   return Math.max(1, Math.min(20, Math.trunc(value)));
 }
 
-function errorResult<T>(message: string): AgentToolResult<T> {
-  return {
-    content: [{ type: "text", text: message }],
-    details: undefined as T,
-  };
-}
-
-function buildTimeoutSignal(signal: AbortSignal | undefined): {
-  signal: AbortSignal;
-  cleanup: () => void;
-} {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MOONSHOT_TIMEOUT_MS);
-  const abort = () => controller.abort();
-  if (signal?.aborted) {
-    controller.abort();
-  } else {
-    signal?.addEventListener("abort", abort, { once: true });
-  }
-
-  return {
-    signal: controller.signal,
-    cleanup: () => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-    },
-  };
-}
-
-function buildHeaders(accessToken: string, toolCallId: string): Record<string, string> {
-  return {
-    ...getCommonHeaders(),
-    Authorization: `Bearer ${accessToken}`,
-    "Content-Type": "application/json",
-    "X-Msh-Tool-Call-Id": toolCallId,
-  };
+interface MoonshotSearchResponse {
+  search_results?: unknown;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string {
@@ -142,22 +86,6 @@ function mapSearchResults(value: unknown, includeContent: boolean): MoonshotSear
 function searchResultsText(results: MoonshotSearchResult[]): string {
   if (results.length === 0) return "[]";
   return JSON.stringify(results, null, 2);
-}
-
-function textComponent(text: string) {
-  return {
-    render: () => text.split("\n"),
-    invalidate: () => {},
-  };
-}
-
-function firstText(result: AgentToolResult<unknown>): string {
-  const first = result.content[0];
-  return first?.type === "text" ? first.text : "";
-}
-
-function shouldCollapse(defaultCollapsed: boolean, expanded: boolean | undefined): boolean {
-  return defaultCollapsed && expanded !== true;
 }
 
 function renderSearchResult(
@@ -195,25 +123,8 @@ function renderFetchResult(
   );
 }
 
-async function readErrorBody(response: Response): Promise<string> {
-  return response.text().catch(() => "");
-}
-
-async function fetchWithAuthRetry(
-  deps: MoonshotToolDeps,
-  accessToken: string,
-  request: (token: string) => Promise<Response>,
-): Promise<Response> {
-  const response = await request(accessToken);
-  if (response.status !== 401) return response;
-
-  const refreshed = await deps.refreshAccessToken(accessToken);
-  if (!refreshed || refreshed === accessToken) return response;
-  return request(refreshed);
-}
-
-export function buildMoonshotSearchTool(options: BuildMoonshotToolOptions = {}) {
-  const deps = buildDeps(options);
+export function buildMoonshotSearchTool(options: BuildKimiToolOptions = {}) {
+  const deps = buildKimiToolDeps(options);
   const defaultCollapsed = options.defaultCollapsed ?? true;
 
   return defineTool({
@@ -236,7 +147,7 @@ export function buildMoonshotSearchTool(options: BuildMoonshotToolOptions = {}) 
       const timeout = buildTimeoutSignal(signal);
       try {
         const response = await fetchWithAuthRetry(deps, accessToken, (token) =>
-          deps.fetch(`${MOONSHOT_BASE_V1}/search`, {
+          deps.fetch(`${getKimiBaseV1()}/search`, {
             method: "POST",
             headers: buildHeaders(token, toolCallId),
             body: JSON.stringify({
@@ -276,8 +187,8 @@ export function buildMoonshotSearchTool(options: BuildMoonshotToolOptions = {}) 
   });
 }
 
-export function buildMoonshotFetchTool(options: BuildMoonshotToolOptions = {}) {
-  const deps = buildDeps(options);
+export function buildMoonshotFetchTool(options: BuildKimiToolOptions = {}) {
+  const deps = buildKimiToolDeps(options);
   const defaultCollapsed = options.defaultCollapsed ?? true;
 
   return defineTool({
@@ -298,7 +209,7 @@ export function buildMoonshotFetchTool(options: BuildMoonshotToolOptions = {}) {
       const timeout = buildTimeoutSignal(signal);
       try {
         const response = await fetchWithAuthRetry(deps, accessToken, (token) =>
-          deps.fetch(`${MOONSHOT_BASE_V1}/fetch`, {
+          deps.fetch(`${getKimiBaseV1()}/fetch`, {
             method: "POST",
             headers: {
               ...buildHeaders(token, toolCallId),

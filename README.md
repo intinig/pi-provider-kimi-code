@@ -5,28 +5,32 @@
 
 **Use Kimi Code in Pi, with the Kimi parts handled.**
 
-Pi already has a basic `kimi-coding` provider. This extension is for the parts that start to matter once Kimi Code becomes part of your real Pi workflow: account login reuse, file uploads, measured cache behavior, live model metadata, and optional Moonshot search/fetch tools.
+Pi already has a basic `kimi-coding` provider. This extension is for the parts that start to matter once Kimi Code becomes part of your real Pi workflow: account login reuse, file uploads, measured cache behavior, live model metadata, and optional Moonshot search/fetch/datasource tools.
+
+> **Kimi K2.7 supported.** The provider automatically discovers the current model from Kimi's `/v1/models` endpoint at login time, so new rollouts (including K2.7) are picked up immediately without a package update.
 
 ## Why this exists
 
-Pi is a small harness you adapt to your own workflow. Kimi CLI is Moonshot's official Kimi Code path. This package sits between them: Kimi Code as a Pi provider, plus the Kimi-specific details that the basic provider keeps simple.
+Pi is a small harness you adapt to your own workflow. Kimi Code is Moonshot's official coding agent. This package sits between them: Kimi Code as a Pi provider, plus the Kimi-specific details that the basic provider keeps simple.
 
-- **Use your Kimi account.** Log in with `/login kimi-coding`, or reuse an existing `kimi-cli` session.
+Kimi's API surface goes beyond the LLM itself. It includes file uploads, web search, page fetch, and a growing set of datasource APIs. This extension wires those capabilities into Pi so you can use them alongside the community's existing extensions — MCP servers, custom themes, skills, and any other Pi add-on — without leaving the harness.
+
+- **Use your Kimi account.** Log in with `/login kimi-coding`, or reuse an existing `kimi-code` session.
 - **Send files the Kimi way.** Large inline images go through Kimi's Files API and become `ms://` references instead of huge base64 payloads.
 - **Know what the cache is doing.** Kimi caches by content prefix. This repo measures that behavior instead of pretending `prompt_cache_key` controls it.
 - **Use the safer protocol by default.** OpenAI-compatible mode is the default because tool results are less ambiguous there. Anthropic-compatible mode is still available.
-- **Turn on Kimi-native tools when you want them.** `moonshot_search` and `moonshot_fetch` are opt-in, configurable per user or per project.
+- **Turn on Kimi-native tools when you want them.** `moonshot_search`, `moonshot_fetch`, and `kimi_datasource` are opt-in, configurable per user or per project.
 
 ## What this package adds
 
 - Kimi account login in Pi, plus `KIMI_API_KEY` for CI or pay-per-token use.
-- `kimi-cli` credential reuse from `~/.kimi/credentials/kimi-code.json`.
+- `kimi-code` credential reuse from `~/.kimi/credentials/kimi-code.json`.
 - Kimi Files API uploads for large inline images.
 - Live model metadata from Kimi at login / refresh time.
 - OpenAI-compatible mode by default, Anthropic-compatible mode on request.
 - Kimi K2.6 reasoning level mapping for Pi's reasoning controls.
 - Stream cleanup for Kimi's thinking-only placeholder text.
-- Optional `moonshot_search` and `moonshot_fetch` tools via `/kimi-settings`.
+- Optional `moonshot_search`, `moonshot_fetch`, and unified datasource `kimi_datasource` tools via `/kimi-settings`.
 - No build step; Pi loads the TypeScript extension directly.
 
 ## Install
@@ -62,13 +66,13 @@ Inside Pi, run:
 
 A browser tab opens, you sign into your Kimi account, and Pi stores the credential at `~/.pi/agent/auth.json`. Tokens refresh automatically.
 
-If you already use `kimi-cli`, this extension can reuse its credential file:
+If you already use `kimi-code`, this extension can reuse its credential file:
 
 ```text
 ~/.kimi/credentials/kimi-code.json
 ```
 
-The file is read-only from this extension's side. Set `KIMI_SHARE_DIR` if your `kimi-cli` share directory lives somewhere else.
+The file is read-only from this extension's side. Set `KIMI_SHARE_DIR` if your `kimi-code` share directory lives somewhere else.
 
 For CI or pay-per-token use, set `KIMI_API_KEY` instead:
 
@@ -90,32 +94,20 @@ Select it inside Pi:
 /model kimi-coding/kimi-for-coding
 ```
 
-Kimi keeps Coding models behind aliases. Rather than hardcoding a stale model list, this extension asks Kimi for the current model info when you log in or refresh. If your account is on a newer rollout or internal test, Pi can pick up the latest model name and context size without waiting for a package release.
+Kimi keeps Coding models behind aliases. Rather than hardcoding a stale model list, this extension asks Kimi for the current model info when you log in or refresh. If your account is on a newer rollout (e.g., Kimi K2.7) or internal test, Pi can pick up the latest model name and context size without waiting for a package release.
 
 Fallback values:
 
-- Context window: `262144` tokens
-- Max output: `32000` tokens
+- Context window: `256k` tokens
+- Max output: `32k` tokens
 - Input: text and image
 - Reasoning: enabled
 
-Kimi K2.6 supports Pi's reasoning levels. This provider maps them to Kimi's current reasoning efforts:
+The provider maps Pi's reasoning levels to Kimi's reasoning-effort controls. The exact mapping depends on the model returned by the server at login time, and the provider refreshes it automatically on every credential refresh.
 
-- `off` / `none` — reasoning disabled
-- `minimal` / `low` — low effort
-- `medium` — medium effort
-- `high` / `xhigh` — high effort
+## Optional tools
 
-If Kimi reports a larger context window, the provider uses that value. You can also override the advertised context or model name with `KIMI_MODEL_MAX_CONTEXT_SIZE` / `KIMI_MODEL_NAME`; see [docs/ENV.md](docs/ENV.md).
-
-## Optional Moonshot tools
-
-Kimi Coding has server-side search and fetch tools. This extension can expose them to Pi as:
-
-- `moonshot_search`
-- `moonshot_fetch`
-
-They are off by default. Turn them on when you want Kimi's own search/fetch path in the agent loop.
+Kimi Coding has server-side capabilities that this extension can expose as opt-in tools. All tools are off by default. Enable them individually through `/kimi-settings` or JSON config.
 
 Inside Pi, run:
 
@@ -130,18 +122,50 @@ Config files are JSON:
 - Home: `~/.pi/pi-provider-kimi-code.json`
 - Project override: `<cwd>/.pi/pi-provider-kimi-code.json`
 
-Project config overrides home config with a deep merge. Missing files or missing keys mean both tools stay off.
+Project config overrides home config with a deep merge. Missing files or missing keys mean all tools stay off.
+
+### Available tools
+
+| Tool              | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `moonshot_search` | Web search through Kimi's Moonshot service     |
+| `moonshot_fetch`  | Web page fetch through Kimi's Moonshot service |
+| `kimi_datasource` | Unified Kimi datasource tool                   |
+
+### Example config
 
 ```json
 {
   "tools": {
     "moonshot_search": { "enabled": true, "default_collapsed": true },
-    "moonshot_fetch": { "enabled": true, "default_collapsed": true }
+    "moonshot_fetch": { "enabled": true, "default_collapsed": true },
+    "kimi_datasource": { "enabled": true, "default_collapsed": true }
   }
 }
 ```
 
-Both tools require `/login kimi-coding` OAuth credentials. `KIMI_API_KEY` is not used for these tools. Your account also needs access to Moonshot's server-side search/fetch services; if not, the upstream service can return subscription or whitelist errors.
+### Datasource tool
+
+`kimi_datasource` calls Kimi's `/tools` endpoint. It accepts `data_source_name` plus optional `api_name` and `params`:
+
+- Without `api_name`: returns the datasource description (available APIs).
+- With `api_name` and `params`: calls the specified API.
+
+Supported datasource names:
+
+| Datasource             | Description                           |
+| ---------------------- | ------------------------------------- |
+| `stock_finance_data`   | Chinese stock and financial data      |
+| `yahoo_finance`        | Yahoo Finance market data             |
+| `world_bank_open_data` | World Bank open statistics            |
+| `tianyancha`           | Chinese enterprise and corporate data |
+| `arxiv`                | Academic paper search and metadata    |
+| `scholar`              | Academic literature search            |
+| `yuandian_law`         | Chinese legal database and case law   |
+
+### Common notes
+
+All tools require `/login kimi-coding` OAuth credentials. `KIMI_API_KEY` is not used for these tools. Your account also needs access to Moonshot's server-side services; if not, the upstream service can return subscription or whitelist errors.
 
 `default_collapsed` controls only the TUI preview. The full tool result still goes to the model; set it to `false` if you want previews expanded by default.
 
@@ -156,13 +180,13 @@ Most users do not need environment variables. Two are worth knowing:
 
 Moonshot search/fetch tools are configured through `/kimi-settings` or JSON config files, not env vars.
 
-The full env list, including base URL overrides, `kimi-cli` path overrides, upload tuning, debug logs, and model metadata overrides, lives in [docs/ENV.md](docs/ENV.md).
+The full env list, including base URL overrides, `kimi-code` path overrides, upload tuning, debug logs, and model metadata overrides, lives in [docs/ENV.md](docs/ENV.md).
 
 ## Notes
 
-### Kimi CLI vs Pi
+### Kimi Code vs Pi
 
-`kimi-cli` is Moonshot's official terminal agent. Pi is the harness you adapt to your own workflow: extensions, skills, prompts, themes, custom commands, status bars, and UI pieces. This package lets you keep Kimi Code as the model path while staying inside Pi.
+`kimi-code` is Moonshot's official terminal agent. Pi is the harness you adapt to your own workflow: extensions, skills, prompts, themes, custom commands, status bars, and UI pieces. This package lets you keep Kimi Code as the model path while staying inside Pi.
 
 ### Cache behavior
 
@@ -189,7 +213,7 @@ The OpenAI-compatible protocol uses a dedicated `role: "tool"` message, so the b
 
 ### Is this affiliated with Moonshot AI?
 
-No. This is an independent extension. The login flow is derived from the public implementation in the open-source [`kimi-cli`](https://github.com/MoonshotAI/kimi-cli) repository.
+No. This is an independent extension. The login flow is derived from the public implementation in the open-source Kimi Code repository.
 
 ## Troubleshooting
 
@@ -203,17 +227,17 @@ The login flow always prints a verification URL. If your terminal or OS blocks a
 
 ### "Access denied" or subscription errors after a successful login
 
-Your Moonshot account needs an active Kimi Code subscription for the provider to do anything useful. If the same account works in `kimi-cli`, re-run `/login kimi-coding` to refresh credentials.
+Your Moonshot account needs an active Kimi Code Plan for the provider to do anything useful. If the same account works in `kimi-code`, re-run `/login kimi-coding` to refresh credentials.
 
-### Moonshot tools do not show up
+### Tools do not show up
 
-Run `/kimi-settings` and check whether `moonshot_search` / `moonshot_fetch` are enabled in the home or project config. These tools also require `/login kimi-coding`; `KIMI_API_KEY` is not enough.
+Run `/kimi-settings` and check whether the tool is enabled in the home or project config. All tools also require `/login kimi-coding`; `KIMI_API_KEY` is not enough.
 
 If you changed the JSON config by hand, reload it through `/kimi-settings` or start a new Pi session.
 
-### Moonshot tools return subscription or whitelist errors
+### Tools return subscription or whitelist errors
 
-The tools call Moonshot's server-side search/fetch services. Some accounts may not have access even with an active Kimi Code Plan. The error comes from the upstream service.
+The tools call Moonshot's server-side services. Some accounts may not have access even with an active Kimi Code Plan. The error comes from the upstream service.
 
 ### Large images fail with a payload error
 
@@ -238,7 +262,6 @@ In OpenAI mode this extension maps the `developer` role to `system` (Kimi's Codi
 ## References
 
 - Pi: [earendil-works/pi](https://github.com/earendil-works/pi)
-- Upstream login implementation and feature request: [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) · [kimi-cli#757](https://github.com/MoonshotAI/kimi-cli/issues/757)
 - Environment variables: [docs/ENV.md](docs/ENV.md)
 - Testing guide: [docs/TESTING.md](docs/TESTING.md)
 - Cache behavior: [docs/caching.md](docs/caching.md)
@@ -246,7 +269,7 @@ In OpenAI mode this extension maps the `developer` role to `system` (Kimi's Codi
 
 ## Credits
 
-Based on the login implementation from [`kimi-cli`](https://github.com/MoonshotAI/kimi-cli) by Moonshot AI. Built as a Pi extension by [@badlogic](https://github.com/badlogic).
+Based on the login implementation from Kimi Code by Moonshot AI. Built as a Pi extension by [@badlogic](https://github.com/badlogic).
 
 ## License
 

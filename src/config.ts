@@ -1,11 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+export const KIMI_TOOL_NAMES = ["moonshot_search", "moonshot_fetch", "kimi_datasource"] as const;
+
+export type KimiToolName = (typeof KIMI_TOOL_NAMES)[number];
+
+export type KimiConfigSource = "project" | "home" | "default";
+
 export interface KimiCodeConfig {
-  tools: {
-    moonshot_search: { enabled: boolean; default_collapsed: boolean };
-    moonshot_fetch: { enabled: boolean; default_collapsed: boolean };
-  };
+  tools: Record<KimiToolName, { enabled: boolean; default_collapsed: boolean }>;
+}
+
+export interface KimiCodeConfigSources {
+  tools: Record<KimiToolName, { enabled: KimiConfigSource; default_collapsed: KimiConfigSource }>;
 }
 
 export interface LoadKimiCodeConfigOptions {
@@ -13,11 +20,16 @@ export interface LoadKimiCodeConfigOptions {
   home: string;
 }
 
+function makeDefaultTools(): KimiCodeConfig["tools"] {
+  const tools = {} as KimiCodeConfig["tools"];
+  for (const name of KIMI_TOOL_NAMES) {
+    tools[name] = { enabled: false, default_collapsed: true };
+  }
+  return tools;
+}
+
 export const DEFAULT_KIMI_CODE_CONFIG: KimiCodeConfig = {
-  tools: {
-    moonshot_search: { enabled: false, default_collapsed: true },
-    moonshot_fetch: { enabled: false, default_collapsed: true },
-  },
+  tools: makeDefaultTools(),
 };
 
 export function getGlobalKimiCodeConfigPath(home: string): string {
@@ -85,23 +97,61 @@ function readDefaultCollapsed(config: Record<string, unknown>, toolName: string)
   return tool.default_collapsed !== false;
 }
 
+function hasToolField(
+  config: Record<string, unknown>,
+  toolName: KimiToolName,
+  field: "enabled" | "default_collapsed",
+): boolean {
+  const tools = config.tools;
+  if (!isRecord(tools)) return false;
+  const tool = tools[toolName];
+  if (!isRecord(tool)) return false;
+  return Object.hasOwn(tool, field);
+}
+
+function readToolConfig(
+  config: Record<string, unknown>,
+  toolName: KimiToolName,
+): { enabled: boolean; default_collapsed: boolean } {
+  return {
+    enabled: readEnabled(config, toolName),
+    default_collapsed: readDefaultCollapsed(config, toolName),
+  };
+}
+
 export function loadKimiCodeConfig(options: LoadKimiCodeConfigOptions): KimiCodeConfig {
   const globalConfig = readConfigFile(getGlobalKimiCodeConfigPath(options.home));
   const projectConfig = readConfigFile(getProjectKimiCodeConfigPath(options.cwd));
   const merged = mergeConfig(globalConfig, projectConfig);
 
-  return {
-    tools: {
-      moonshot_search: {
-        enabled: readEnabled(merged, "moonshot_search"),
-        default_collapsed: readDefaultCollapsed(merged, "moonshot_search"),
-      },
-      moonshot_fetch: {
-        enabled: readEnabled(merged, "moonshot_fetch"),
-        default_collapsed: readDefaultCollapsed(merged, "moonshot_fetch"),
-      },
-    },
-  };
+  const tools = {} as KimiCodeConfig["tools"];
+  for (const name of KIMI_TOOL_NAMES) {
+    tools[name] = readToolConfig(merged, name);
+  }
+  return { tools };
+}
+
+export function loadKimiCodeConfigSources(
+  options: LoadKimiCodeConfigOptions,
+): KimiCodeConfigSources {
+  const homeConfig = readConfigFileQuiet(getGlobalKimiCodeConfigPath(options.home));
+  const projectConfig = readConfigFileQuiet(getProjectKimiCodeConfigPath(options.cwd));
+  const tools = {} as KimiCodeConfigSources["tools"];
+  for (const name of KIMI_TOOL_NAMES) {
+    tools[name] = {
+      enabled: hasToolField(projectConfig, name, "enabled")
+        ? "project"
+        : hasToolField(homeConfig, name, "enabled")
+          ? "home"
+          : "default",
+      default_collapsed: hasToolField(projectConfig, name, "default_collapsed")
+        ? "project"
+        : hasToolField(homeConfig, name, "default_collapsed")
+          ? "home"
+          : "default",
+    };
+  }
+  return { tools };
 }
 
 export function loadProjectKimiCodeConfig(cwd: string): KimiCodeConfig {
@@ -114,18 +164,11 @@ export function loadHomeKimiCodeConfig(home: string): KimiCodeConfig {
 
 function loadKimiCodeConfigFile(path: string): KimiCodeConfig {
   const projectConfig = readConfigFileQuiet(path);
-  return {
-    tools: {
-      moonshot_search: {
-        enabled: readEnabled(projectConfig, "moonshot_search"),
-        default_collapsed: readDefaultCollapsed(projectConfig, "moonshot_search"),
-      },
-      moonshot_fetch: {
-        enabled: readEnabled(projectConfig, "moonshot_fetch"),
-        default_collapsed: readDefaultCollapsed(projectConfig, "moonshot_fetch"),
-      },
-    },
-  };
+  const tools = {} as KimiCodeConfig["tools"];
+  for (const name of KIMI_TOOL_NAMES) {
+    tools[name] = readToolConfig(projectConfig, name);
+  }
+  return { tools };
 }
 
 export function saveProjectKimiCodeConfig(cwd: string, config: KimiCodeConfig): void {
@@ -138,13 +181,15 @@ export function saveHomeKimiCodeConfig(home: string, config: KimiCodeConfig): vo
 
 function saveKimiCodeConfigFile(path: string, config: KimiCodeConfig): void {
   const raw = readConfigFileQuiet(path);
+  const tools: Record<string, unknown> = {
+    ...(isRecord(raw.tools) ? raw.tools : {}),
+  };
+  for (const name of KIMI_TOOL_NAMES) {
+    tools[name] = { ...config.tools[name] };
+  }
   const next = {
     ...raw,
-    tools: {
-      ...(isRecord(raw.tools) ? raw.tools : {}),
-      moonshot_search: { ...config.tools.moonshot_search },
-      moonshot_fetch: { ...config.tools.moonshot_fetch },
-    },
+    tools,
   };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");

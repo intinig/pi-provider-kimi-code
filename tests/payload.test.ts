@@ -323,6 +323,81 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.max_tokens, undefined);
     assert.equal(payload.max_completion_tokens, 32000);
   });
+
+  it("suppresses reasoning fields when supportsThinkingType is 'no'", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({ reasoning: "high", supportsThinkingType: "no" }),
+    );
+
+    assert.equal(payload.reasoning_effort, undefined);
+    assert.equal(payload.extra_body, undefined);
+  });
+
+  it("forces thinking enabled when supportsThinkingType is 'only' and caller asks for off", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({ reasoning: "none" as ThinkingLevel, supportsThinkingType: "only" }),
+    );
+
+    assert.equal(payload.reasoning_effort, "low");
+    assert.deepEqual(payload.extra_body, {
+      thinking: { type: "enabled" },
+    });
+  });
+
+  it("preserves caller reasoning when supportsThinkingType is 'only' and caller already enabled", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({ reasoning: "high", supportsThinkingType: "only" }),
+    );
+
+    assert.equal(payload.reasoning_effort, "high");
+    assert.deepEqual(payload.extra_body, {
+      thinking: { type: "enabled" },
+    });
+  });
+
+  it("forces thinking enabled when supportsThinkingType is 'only' and reasoning is missing", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    await applyKimiPayloadMutations(payload, baseCtx({ supportsThinkingType: "only" }));
+
+    assert.equal(payload.reasoning_effort, "low");
+    assert.deepEqual(payload.extra_body, {
+      thinking: { type: "enabled" },
+    });
+  });
+
+  it("behaves normally when supportsThinkingType is 'both'", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({ reasoning: "high", supportsThinkingType: "both" }),
+    );
+
+    assert.equal(payload.reasoning_effort, "high");
+    assert.deepEqual(payload.extra_body, {
+      thinking: { type: "enabled" },
+    });
+  });
 });
 
 describe("readEnvOverrides", () => {

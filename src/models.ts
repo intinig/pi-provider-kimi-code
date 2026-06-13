@@ -13,6 +13,7 @@ export interface KimiOAuthExtras {
   contextLength?: number;
   supportsReasoning?: boolean;
   supportsImageIn?: boolean;
+  supportsThinkingType?: "only" | "no" | "both";
 }
 
 export type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
@@ -23,6 +24,12 @@ interface KimiServerModel {
   context_length?: unknown;
   supports_reasoning?: unknown;
   supports_image_in?: unknown;
+  supports_thinking_type?: unknown;
+}
+
+function parseSupportsThinkingType(value: unknown): "only" | "no" | "both" | undefined {
+  if (value === "only" || value === "no" || value === "both") return value;
+  return undefined;
 }
 
 export function buildModelsUrl(baseUrl: string): string {
@@ -55,7 +62,10 @@ export async function discoverKimiModelMetadata(accessToken: string): Promise<Ki
     if (typeof preferred.context_length === "number" && preferred.context_length > 0) {
       extras.contextLength = preferred.context_length;
     }
-    if (typeof preferred.supports_reasoning === "boolean") {
+    const thinkingType = parseSupportsThinkingType(preferred.supports_thinking_type);
+    if (thinkingType) {
+      extras.supportsThinkingType = thinkingType;
+    } else if (typeof preferred.supports_reasoning === "boolean") {
       extras.supportsReasoning = preferred.supports_reasoning;
     }
     if (typeof preferred.supports_image_in === "boolean") {
@@ -71,7 +81,8 @@ export function applyKimiOAuthExtrasToModel(
   model: Model<Api>,
   extras: KimiOAuthExtras,
 ): Model<Api> {
-  const next: Model<Api> & { wireModelId?: string } = { ...model };
+  const next: Model<Api> & { wireModelId?: string; supportsThinkingType?: "only" | "no" | "both" } =
+    { ...model };
   if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
     next.name = extras.modelDisplay;
   }
@@ -81,8 +92,12 @@ export function applyKimiOAuthExtrasToModel(
   if (typeof extras.wireModelId === "string" && extras.wireModelId) {
     next.wireModelId = extras.wireModelId;
   }
-  if (typeof extras.supportsReasoning === "boolean") {
+  if (typeof extras.supportsThinkingType === "string") {
+    next.reasoning = extras.supportsThinkingType !== "no";
+    next.supportsThinkingType = extras.supportsThinkingType;
+  } else if (typeof extras.supportsReasoning === "boolean") {
     next.reasoning = extras.supportsReasoning;
+    next.supportsThinkingType = undefined;
   }
   if (typeof extras.supportsImageIn === "boolean") {
     const input = ["text"];
@@ -101,7 +116,11 @@ function parseKimiModelCapabilities(value: string | undefined): KimiOAuthExtras 
       .filter(Boolean),
   );
   return {
-    supportsReasoning: caps.has("thinking") || caps.has("always_thinking"),
+    supportsThinkingType: caps.has("always_thinking")
+      ? "only"
+      : caps.has("thinking")
+        ? "both"
+        : "no",
     supportsImageIn: caps.has("image_in"),
   };
 }

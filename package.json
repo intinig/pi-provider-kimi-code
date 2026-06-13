@@ -5,13 +5,13 @@
   "keywords": [
     "ai-provider",
     "coding-agent",
-    "device-code",
     "kimi",
-    "kimi-coder",
+    "kimi-code",
     "kimi-for-coding",
     "kimi-k2",
     "kimi-k2.5",
     "kimi-k2.6",
+    "kimi-k2.7",
     "llm",
     "llm-provider",
     "moonshot",
@@ -20,10 +20,8 @@
     "pi",
     "pi-coding-agent",
     "pi-extension",
-    "pi-mono",
     "pi-package",
-    "pi-provider",
-    "subscription"
+    "pi-provider"
   ],
   "bugs": {
     "url": "https://github.com/Leechael/pi-provider-kimi-code/issues"
@@ -54,6 +52,7 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.78.0",
     "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-tui": "^0.78.1",
     "@j178/prek": "^0.4.4",
     "@types/node": "^24.0.0",
     "oxfmt": "^0.44.0",
@@ -62,7 +61,8 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "pi": {
     "extensions": [

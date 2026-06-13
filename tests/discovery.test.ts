@@ -140,6 +140,50 @@ describe("discoverKimiModelMetadata", () => {
     assert.deepEqual(result, {});
   });
 
+  it("parses supports_thinking_type and prefers it over supports_reasoning", async () => {
+    mock = mockFetch(() =>
+      jsonResponse({
+        data: [
+          {
+            id: "kimi-for-coding",
+            supports_thinking_type: "only",
+            supports_reasoning: false,
+          },
+        ],
+      }),
+    );
+
+    const result = await discoverKimiModelMetadata("tok-1");
+    assert.equal(result.supportsThinkingType, "only");
+    assert.equal(result.supportsReasoning, undefined);
+  });
+
+  it("falls back to supports_reasoning when supports_thinking_type is missing", async () => {
+    mock = mockFetch(() =>
+      jsonResponse({
+        data: [{ id: "kimi-for-coding", supports_reasoning: true }],
+      }),
+    );
+
+    const result = await discoverKimiModelMetadata("tok-1");
+    assert.equal(result.supportsThinkingType, undefined);
+    assert.equal(result.supportsReasoning, true);
+  });
+
+  it("ignores unknown supports_thinking_type values and falls back", async () => {
+    mock = mockFetch(() =>
+      jsonResponse({
+        data: [
+          { id: "kimi-for-coding", supports_thinking_type: "maybe", supports_reasoning: true },
+        ],
+      }),
+    );
+
+    const result = await discoverKimiModelMetadata("tok-1");
+    assert.equal(result.supportsThinkingType, undefined);
+    assert.equal(result.supportsReasoning, true);
+  });
+
   it("omits optional fields when the server does not provide them", async () => {
     mock = mockFetch(() => jsonResponse({ data: [{ id: "kimi-for-coding" }] }));
     const result = await discoverKimiModelMetadata("tok-1");
@@ -207,6 +251,82 @@ describe("applyKimiOAuthExtrasToModel", () => {
     assert.equal(result.reasoning, true);
     assert.deepEqual(result.input, ["text", "image"]);
   });
+
+  it("sets supportsThinkingType on the model when present in extras", () => {
+    const model: Model<Api> = {
+      id: "kimi-for-coding",
+      name: "Kimi for Coding",
+      provider: "kimi-coding",
+      api: "kimi-openai-completions" as Api,
+      baseUrl: "https://api.kimi.com/coding/v1",
+      reasoning: false,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+    };
+
+    const onlyResult = applyKimiOAuthExtrasToModel(model, {
+      supportsThinkingType: "only",
+    }) as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" };
+    assert.equal(onlyResult.reasoning, true);
+    assert.equal(onlyResult.supportsThinkingType, "only");
+
+    const noResult = applyKimiOAuthExtrasToModel(model, {
+      supportsThinkingType: "no",
+    }) as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" };
+    assert.equal(noResult.reasoning, false);
+    assert.equal(noResult.supportsThinkingType, "no");
+
+    const bothResult = applyKimiOAuthExtrasToModel(model, {
+      supportsThinkingType: "both",
+    }) as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" };
+    assert.equal(bothResult.reasoning, true);
+    assert.equal(bothResult.supportsThinkingType, "both");
+  });
+
+  it("does not set supportsThinkingType when not in extras", () => {
+    const model: Model<Api> = {
+      id: "kimi-for-coding",
+      name: "Kimi for Coding",
+      provider: "kimi-coding",
+      api: "kimi-openai-completions" as Api,
+      baseUrl: "https://api.kimi.com/coding/v1",
+      reasoning: false,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+    };
+
+    const result = applyKimiOAuthExtrasToModel(model, {
+      supportsReasoning: true,
+    }) as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" };
+    assert.equal(result.reasoning, true);
+    assert.equal(result.supportsThinkingType, undefined);
+  });
+
+  it("clears supportsThinkingType when extras has supportsReasoning but not supportsThinkingType", () => {
+    const model: Model<Api> & { supportsThinkingType?: "only" | "no" | "both" } = {
+      id: "kimi-for-coding",
+      name: "Kimi for Coding",
+      provider: "kimi-coding",
+      api: "kimi-openai-completions" as Api,
+      baseUrl: "https://api.kimi.com/coding/v1",
+      reasoning: true,
+      supportsThinkingType: "only",
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+    };
+
+    const result = applyKimiOAuthExtrasToModel(model, {
+      supportsReasoning: false,
+    }) as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" };
+    assert.equal(result.reasoning, false);
+    assert.equal(result.supportsThinkingType, undefined);
+  });
 });
 
 describe("DEFAULT_KIMI_MODEL_INPUT", () => {
@@ -219,7 +339,7 @@ describe("applyKimiEnvOverridesToModel", () => {
   it("applies official Kimi model env overrides to the registered model", () => {
     process.env.KIMI_MODEL_NAME = "kimi-k2-custom";
     process.env.KIMI_MODEL_MAX_CONTEXT_SIZE = "1048576";
-    process.env.KIMI_MODEL_CAPABILITIES = "thinking,image_in,video_in";
+    process.env.KIMI_MODEL_CAPABILITIES = "thinking,image_in";
 
     const model: Model<Api> = {
       id: "kimi-for-coding",
@@ -237,6 +357,7 @@ describe("applyKimiEnvOverridesToModel", () => {
     const result = applyKimiEnvOverridesToModel(model) as Model<Api> & {
       wireModelId?: string;
       input: string[];
+      supportsThinkingType?: "only" | "no" | "both";
     };
 
     assert.equal(result.id, "kimi-for-coding");
@@ -244,7 +365,32 @@ describe("applyKimiEnvOverridesToModel", () => {
     assert.equal(result.wireModelId, "kimi-k2-custom");
     assert.equal(result.contextWindow, 1048576);
     assert.equal(result.reasoning, true);
+    assert.equal(result.supportsThinkingType, "both");
     assert.deepEqual(result.input, ["text", "image"]);
+  });
+
+  it("maps always_thinking env capability to supportsThinkingType only", () => {
+    process.env.KIMI_MODEL_CAPABILITIES = "always_thinking,image_in";
+
+    const model: Model<Api> = {
+      id: "kimi-for-coding",
+      name: "Kimi for Coding",
+      provider: "kimi-coding",
+      api: "kimi-openai-completions" as Api,
+      baseUrl: "https://api.kimi.com/coding/v1",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+    };
+
+    const result = applyKimiEnvOverridesToModel(model) as Model<Api> & {
+      supportsThinkingType?: "only" | "no" | "both";
+    };
+
+    assert.equal(result.reasoning, true);
+    assert.equal(result.supportsThinkingType, "only");
   });
 
   it("maps official capabilities exactly when provided", () => {
@@ -263,9 +409,13 @@ describe("applyKimiEnvOverridesToModel", () => {
       maxTokens: 32000,
     };
 
-    const result = applyKimiEnvOverridesToModel(model) as Model<Api> & { input: string[] };
+    const result = applyKimiEnvOverridesToModel(model) as Model<Api> & {
+      input: string[];
+      supportsThinkingType?: "only" | "no" | "both";
+    };
 
     assert.equal(result.reasoning, false);
+    assert.equal(result.supportsThinkingType, "no");
     assert.deepEqual(result.input, ["text", "image"]);
   });
 });

@@ -39,6 +39,7 @@ export interface KimiPayloadContext {
   reasoning?: ThinkingLevel;
   thinkingKeep?: string;
   envOverrides: KimiEnvOverrides;
+  supportsThinkingType?: "only" | "no" | "both";
 }
 
 export function isRecord(value: unknown): value is JsonRecord {
@@ -52,6 +53,16 @@ function mapThinkingLevel(level?: string): { effort: string | null; enabled: boo
   if (level === "medium") return { effort: "medium", enabled: true };
   if (level === "high" || level === "xhigh") return { effort: "high", enabled: true };
   return undefined;
+}
+
+function resolveThinkingLevel(ctx: KimiPayloadContext): ThinkingLevel | undefined {
+  if (ctx.supportsThinkingType === "no") return undefined;
+  if (ctx.supportsThinkingType === "only") {
+    if (!ctx.reasoning) return "low";
+    const mapped = mapThinkingLevel(ctx.reasoning);
+    if (mapped && !mapped.enabled) return "low";
+  }
+  return ctx.reasoning;
 }
 
 function parseInlineUploadThreshold(raw: string | undefined): number {
@@ -435,8 +446,9 @@ export async function applyKimiPayloadMutations(
   }
 
   // 5. Reasoning effort mapping.
-  if (ctx.reasoning) {
-    const mapped = mapThinkingLevel(ctx.reasoning);
+  const resolvedReasoning = resolveThinkingLevel(ctx);
+  if (resolvedReasoning) {
+    const mapped = mapThinkingLevel(resolvedReasoning);
     if (mapped) {
       payload.reasoning_effort = mapped.effort;
       const extraBody = isRecord(payload.extra_body) ? payload.extra_body : {};

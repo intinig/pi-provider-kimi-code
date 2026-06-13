@@ -29,13 +29,16 @@ import { relative } from "node:path";
 
 import {
   type KimiCodeConfig,
+  KIMI_TOOL_NAMES,
   getProjectKimiCodeConfigPath,
   getGlobalKimiCodeConfigPath,
   loadHomeKimiCodeConfig,
   loadKimiCodeConfig,
+  loadKimiCodeConfigSources,
   loadProjectKimiCodeConfig,
   saveHomeKimiCodeConfig,
   saveProjectKimiCodeConfig,
+  type KimiToolName,
 } from "./src/config.ts";
 import {
   DEFAULT_KIMI_MODEL_INPUT,
@@ -49,12 +52,10 @@ import {
   applyKimiEnvOverridesToModel,
   applyKimiOAuthExtrasToModel,
 } from "./src/models.ts";
-import { loginKimiCode, refreshKimiCodeToken } from "./src/oauth.ts";
+import { loginKimiCode, refreshKimiAuthToken, refreshKimiCodeToken } from "./src/oauth.ts";
 import { streamSimpleKimi } from "./src/stream.ts";
 import { buildMoonshotFetchTool, buildMoonshotSearchTool } from "./src/tools/moonshot.ts";
-
-const MOONSHOT_TOOL_NAMES = ["moonshot_search", "moonshot_fetch"] as const;
-type MoonshotToolName = (typeof MOONSHOT_TOOL_NAMES)[number];
+import { buildKimiDatasourceTool } from "./src/tools/datasource.ts";
 type KimiConfigScope = "project" | "home";
 const MEMBERSHIP_LEVEL_NAMES: Record<string, string> = {
   LEVEL_FREE: "Free",
@@ -71,30 +72,30 @@ interface UsageRow {
   limit: number;
 }
 
+function buildKimiTool(toolName: KimiToolName, config: KimiCodeConfig) {
+  const opts = { defaultCollapsed: config.tools[toolName].default_collapsed };
+  if (toolName === "moonshot_search") return buildMoonshotSearchTool(opts);
+  if (toolName === "moonshot_fetch") return buildMoonshotFetchTool(opts);
+  if (toolName === "kimi_datasource") return buildKimiDatasourceTool(opts);
+  return undefined;
+}
+
 function registerConfiguredMoonshotTools(
   pi: ExtensionAPI,
   config: KimiCodeConfig,
   options: { updateActiveTools: boolean },
 ): void {
-  if (config.tools.moonshot_search.enabled) {
-    pi.registerTool(
-      buildMoonshotSearchTool({
-        defaultCollapsed: config.tools.moonshot_search.default_collapsed,
-      }),
-    );
-  }
-  if (config.tools.moonshot_fetch.enabled) {
-    pi.registerTool(
-      buildMoonshotFetchTool({
-        defaultCollapsed: config.tools.moonshot_fetch.default_collapsed,
-      }),
-    );
+  for (const toolName of KIMI_TOOL_NAMES) {
+    if (config.tools[toolName].enabled) {
+      const tool = buildKimiTool(toolName, config);
+      if (tool) pi.registerTool(tool);
+    }
   }
 
   if (!options.updateActiveTools) return;
 
   const activeTools = new Set(pi.getActiveTools());
-  for (const toolName of MOONSHOT_TOOL_NAMES) {
+  for (const toolName of KIMI_TOOL_NAMES) {
     if (config.tools[toolName].enabled) {
       activeTools.add(toolName);
     } else {
@@ -186,6 +187,17 @@ function quotaBar(remaining: number, limit: number): string {
   return `[${"#".repeat(filled)}${"-".repeat(width - filled)}]`;
 }
 
+function fetchKimiUsage(token: string, signal: AbortSignal): Promise<Response> {
+  return fetch("https://api.kimi.com/coding/v1/usages", {
+    method: "GET",
+    headers: {
+      ...getCommonHeaders(),
+      Authorization: `Bearer ${token}`,
+    },
+    signal,
+  });
+}
+
 async function fetchKimiUsageSummary(): Promise<string> {
   const token = getKimiUsageToken();
   if (!token) return "Usage: missing credentials. Run /login kimi-coding.";
@@ -193,14 +205,11 @@ async function fetchKimiUsageSummary(): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch("https://api.kimi.com/coding/v1/usages", {
-      method: "GET",
-      headers: {
-        ...getCommonHeaders(),
-        Authorization: `Bearer ${token}`,
-      },
-      signal: controller.signal,
-    });
+    let response = await fetchKimiUsage(token, controller.signal);
+    if (response.status === 401) {
+      const refreshed = await refreshKimiAuthToken(token);
+      if (refreshed) response = await fetchKimiUsage(refreshed, controller.signal);
+    }
     if (!response.ok) return `Usage: fetch failed (${response.status})`;
     return parseUsageSummary(await response.json());
   } catch (error) {
@@ -212,7 +221,7 @@ async function fetchKimiUsageSummary(): Promise<string> {
 }
 
 function moonshotStatus(config: KimiCodeConfig): string {
-  return MOONSHOT_TOOL_NAMES.map((toolName) => {
+  return KIMI_TOOL_NAMES.map((toolName) => {
     const tool = config.tools[toolName];
     const enabled = tool.enabled ? "enabled" : "disabled";
     const collapsed = tool.default_collapsed ? "collapsed" : "expanded";
@@ -220,7 +229,7 @@ function moonshotStatus(config: KimiCodeConfig): string {
   }).join("\n");
 }
 
-function toggleEnabled(config: KimiCodeConfig, toolName: MoonshotToolName): KimiCodeConfig {
+function toggleEnabled(config: KimiCodeConfig, toolName: KimiToolName): KimiCodeConfig {
   return {
     tools: {
       ...config.tools,
@@ -232,7 +241,7 @@ function toggleEnabled(config: KimiCodeConfig, toolName: MoonshotToolName): Kimi
   };
 }
 
-function toggleCollapsed(config: KimiCodeConfig, toolName: MoonshotToolName): KimiCodeConfig {
+function toggleCollapsed(config: KimiCodeConfig, toolName: KimiToolName): KimiCodeConfig {
   return {
     tools: {
       ...config.tools,
@@ -278,18 +287,15 @@ async function editConfigScope(
 ): Promise<KimiCodeConfig> {
   let current = loadScopeKimiCodeConfig(scope, ctx.cwd);
   while (true) {
-    const choice = await ctx.ui.select(buildConfigScopeTitle(scope, current, ctx.cwd), [
-      toolMenuItem(current, "moonshot_search"),
-      toolMenuItem(current, "moonshot_fetch"),
-      "Back",
-    ]);
+    const items = KIMI_TOOL_NAMES.map((name) => toolMenuItem(current, name));
+    items.push("Back");
+    const choice = await ctx.ui.select(buildConfigScopeTitle(scope, current, ctx.cwd), items);
     if (!choice || choice === "Back") {
       return loadKimiCodeConfig({ cwd: ctx.cwd, home: os.homedir() });
     }
-    if (choice.startsWith("moonshot_search")) {
-      current = await editMoonshotTool(pi, ctx, scope, current, "moonshot_search");
-    } else if (choice.startsWith("moonshot_fetch")) {
-      current = await editMoonshotTool(pi, ctx, scope, current, "moonshot_fetch");
+    const toolName = KIMI_TOOL_NAMES.find((name) => choice.startsWith(name));
+    if (toolName) {
+      current = await editMoonshotTool(pi, ctx, scope, current, toolName);
     }
   }
 }
@@ -299,7 +305,7 @@ async function editMoonshotTool(
   ctx: ExtensionCommandContext,
   scope: KimiConfigScope,
   config: KimiCodeConfig,
-  toolName: MoonshotToolName,
+  toolName: KimiToolName,
 ): Promise<KimiCodeConfig> {
   let current = config;
   while (true) {
@@ -322,6 +328,7 @@ async function editMoonshotTool(
     const effective = loadKimiCodeConfig({ cwd: ctx.cwd, home: os.homedir() });
     registerConfiguredMoonshotTools(pi, effective, { updateActiveTools: true });
     ctx.ui.notify(`Saved ${toolName} config`, "info");
+    return current;
   }
 }
 
@@ -342,8 +349,17 @@ function saveScopeKimiCodeConfig(
   }
 }
 
-function buildKimiMainTitle(_config: KimiCodeConfig, _cwd: string): string {
-  return "Kimi settings";
+function buildKimiMainTitle(config: KimiCodeConfig, cwd: string): string {
+  const sources = loadKimiCodeConfigSources({ cwd, home: os.homedir() });
+  return [
+    "Kimi settings",
+    "",
+    "Effective tools:",
+    ...KIMI_TOOL_NAMES.map((toolName) => {
+      const enabled = config.tools[toolName].enabled ? "enabled" : "disabled";
+      return `- ${toolName}: ${enabled} (${sources.tools[toolName].enabled})`;
+    }),
+  ].join("\n");
 }
 
 function buildConfigScopeTitle(
@@ -363,11 +379,11 @@ function homeRelative(filePath: string): string {
   return filePath.startsWith(`${home}/`) ? `~/${filePath.slice(home.length + 1)}` : filePath;
 }
 
-function toolMenuItem(config: KimiCodeConfig, toolName: MoonshotToolName): string {
+function toolMenuItem(config: KimiCodeConfig, toolName: KimiToolName): string {
   return `${toolName} -> ${formatToolStatus(config, toolName)}`;
 }
 
-function formatToolStatus(config: KimiCodeConfig, toolName: MoonshotToolName): string {
+function formatToolStatus(config: KimiCodeConfig, toolName: KimiToolName): string {
   const tool = config.tools[toolName];
   const enabled = tool.enabled ? "enabled" : "disabled";
   const collapsed = tool.default_collapsed ? "default collapsed" : "default expanded";

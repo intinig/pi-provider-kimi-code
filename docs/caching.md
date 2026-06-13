@@ -10,8 +10,7 @@ using `kimi-for-coding`.
 
 - Cache identity is the **content prefix hash**. No marker is required, and
   none can disable it.
-- `prompt_cache_key` and Anthropic `cache_control` markers are **fully
-  ignored** for cache decisions.
+- Kimi ignores `prompt_cache_key` and Anthropic `cache_control` markers for cache decisions.
 - On `/coding/v1/messages` (Anthropic-compat), the `system` field, the
   `tools` array, and any `image_url` reference (e.g. `ms://<file_id>`) are
   all part of the cached prefix. Changing any of them invalidates the
@@ -20,7 +19,7 @@ using `kimi-for-coding`.
   invalidation IS measured on the OpenAI endpoint.
 - Cache is **shared between `/messages` (Anthropic) and `/chat/completions`
   (OpenAI)** — switching `KIMI_CODE_PROTOCOL` does NOT invalidate.
-- The **`X-Msh-Device-Id` header is not part of cache identity** (Test 4s).
+- Cache identity does not include the **`X-Msh-Device-Id` header** (Test 4s).
   Different device ids on the same account share cache; the no-header
   bucket and explicit device ids land in the same slot. Rotating
   `~/.pi/providers/kimi-coding/device_id` or running parallel agents on
@@ -39,13 +38,13 @@ using `kimi-for-coding`.
   `reasoning_effort`) do **not** participate in cache identity. Changing
   them between turns is free.
 - The `/coding/v1/chat/completions` (OpenAI-compat) endpoint matches
-  Anthropic's caching behaviour for both exact re-sends and prefix
+  Anthropic's caching behavior for both exact re-sends and prefix
   extensions.
 - Concurrent identical writes converge to a single consistent cache entry —
   no observed race.
-- Cache benefits accrue **within** a single pi session (multi-turn growth,
+- Cache benefits accrue **within** a single Pi session (multi-turn growth,
   branch reuse). Two cold `pi` invocations with the "same" user prompt do
-  not share cache — pi's full payload (system + tools) drifts between
+  not share cache — Pi's full payload (system + tools) drifts between
   sessions.
 
 ## Method
@@ -70,9 +69,9 @@ accidentally share cache through identical prefixes.
 | 4h   | `ttl_upper_check`                     | TTL upper bound (opt-in, long)               |
 | 4i   | `block_size_sweep_check`              | 256-token alignment across sizes             |
 | 4j   | `tools_change_cache_check`            | tools-only change impact                     |
-| 4k   | `small_boundary_cache_check`          | sub-256 token chunk behaviour                |
+| 4k   | `small_boundary_cache_check`          | sub-256 token chunk behavior                 |
 | 4l   | `openai_cache_boundary_check`         | OpenAI endpoint cache mechanics              |
-| 4m   | `retention_none_provider_cache_check` | `PI_CACHE_RETENTION=none` via pi binary      |
+| 4m   | `retention_none_provider_cache_check` | `PI_CACHE_RETENTION=none` via Pi binary      |
 | 4n   | `usage_field_extraction_check`        | unit test of usage extractor (no network)    |
 | 4o   | `non_prompt_params_cache_check`       | does temperature/top_p/etc invalidate?       |
 | 4p   | `multimodal_cache_check`              | image_url in cache identity                  |
@@ -231,7 +230,7 @@ invalidate cache.
 > Scope: both tests target the **Anthropic-compat endpoint**
 > (`/coding/v1/messages`). The OpenAI-compat endpoint serializes `tools`
 > differently (top-level `tools` array with a function-calling schema) and
-> has not been probed for the same behaviour — it may or may not invalidate
+> has not been probed for the same behavior — it may or may not invalidate
 > in the same way.
 
 Test 4f — vary one of system/tools, keep messages identical:
@@ -256,7 +255,7 @@ They appear to be serialized **before** `messages` in the prefix hash, so
 modifying either resets the hash from byte 0.
 
 This is the most operationally significant finding: harnesses that toggle
-the tool list mid-session (MCP plugin load/unload, dynamic tool registration,
+the tool list mid-session (Model Context Protocol (MCP) plugin load/unload, dynamic tool registration,
 agent steering that injects helper tools, etc.) lose cache for every
 subsequent turn until the next stable prefix is re-warmed.
 
@@ -280,7 +279,7 @@ big tool_result dumps — do not break chunk-alignment semantics.
 For prompts below the first 256-token chunk, the **exact-content** cache
 still HITs fully — but the **prefix-extension** path reads 0 (no
 sub-chunk cache for partial prefixes). Crossing the first chunk boundary
-unlocks the normal chunk-floor read behaviour.
+unlocks the normal chunk-floor read behavior.
 
 | warm prompt | exact re-send `cache_read` | extended `cache_read` | floor(warm / 256) × 256 |
 | ----------- | -------------------------- | --------------------- | ----------------------- |
@@ -306,7 +305,7 @@ exact re-send probe:         24041, cache_read = 24041 (100%)
 prefix-extension probe:      24059, cache_read = 23808 (= 93 × 256)
 ```
 
-Identical to Anthropic-endpoint behaviour. Combined with Finding 10 (cache
+Identical to Anthropic-endpoint behavior. Combined with Finding 10 (cache
 shared across protocols), this closes the OpenAI-endpoint open question:
 both endpoints use the same underlying cache, with the same chunk-alignment
 rules.
@@ -374,13 +373,13 @@ probe: exit=0, cache_read=0
 ```
 
 Despite identical user text, neither call hit cache. The most likely cause
-is that pi's full outbound payload (system prompt + tools array, both of
+is that Pi's full outbound payload (system prompt + tools array, both of
 which Finding 11 shows participate in the prefix) drifts between
-invocations — pi assembles them fresh each session and may include
+invocations — Pi assembles them fresh each session and may include
 session-scoped content.
 
 Operational implication: prompt-cache benefits accrue **within** a single
-pi session (multi-turn growth, branch reuse), not across cold pi
+Pi session (multi-turn growth, branch reuse), not across cold Pi
 invocations. Don't expect "running the same task twice from a fresh `pi`
 prompt" to be free.
 
@@ -403,7 +402,7 @@ prior 4\* test omitted it, so this fills the header-dimension gap.
 | V3 set → omitted    | device-A    | (omitted)    | 24052                           |
 
 All four probes read the full prompt back from cache (ratios vs V0:
-V1=100.0%, V2=100.0%, V3=100.0%). The device id header is ignored
+V1=100.0%, V2=100.0%, V3=100.0%). Kimi ignores the device id header
 entirely: distinct device ids on the same account share cache, and the
 no-header bucket lands in the same slot as explicit ids.
 
@@ -425,7 +424,7 @@ rate-limiting server-side, not cache slotting.
   [`kimi-cli`](https://github.com/MoonshotAI/kimi-cli/blob/main/packages/kosong/src/kosong/chat_provider/kimi.py#L95),
   which sets the same field.
 - **`PI_CACHE_RETENTION=none`** currently skips the key injection above.
-  Empirically this has **no effect** on actual cache behaviour — Kimi will
+  Empirically this has **no effect** on actual cache behavior — Kimi will
   still cache. The knob is misleading and should either be documented as
   such or removed.
 - **System prompt and tool list stability matter (Anthropic endpoint).** On
@@ -444,7 +443,7 @@ rate-limiting server-side, not cache slotting.
 - **Caching is intra-session, not cross-session (Finding 18).** Within one
   `pi` session you get the full benefit of prefix growth, branch reuse,
   and exact re-send. Two cold `pi` invocations of "the same task" will not
-  share cache, because pi's full payload (system + tools) drifts between
+  share cache, because Pi's full payload (system + tools) drifts between
   sessions.
 - **`KIMI_CODE_PROTOCOL` switching is free for cache** (Finding 10). Users
   can swap between Anthropic and OpenAI dialects mid-session without losing
@@ -469,6 +468,6 @@ rate-limiting server-side, not cache slotting.
   the same — though Finding 14 shows the basic cache mechanics are aligned.
 - **Cross-account isolation.** Whether cache is shared across API keys /
   Moonshot accounts has privacy implications and has not been probed.
-- **Cache behaviour at ~100K tokens.** Test 4r is opt-in (set
+- **Cache behavior at ~100K tokens.** Test 4r is opt-in (set
   `KIMI_E2E_SKIP_VERY_LARGE_CACHE=0`). The 32K sweep in Finding 4 holds for
   every size tested, but extreme sizes haven't been confirmed.

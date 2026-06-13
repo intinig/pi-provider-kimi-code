@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,8 @@ import type {
   RegisteredCommand,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { KIMI_TOOL_NAMES } from "../src/config.ts";
+import { PROVIDER_ID } from "../src/constants.ts";
 import registerKimiCodeExtension from "../index.ts";
 
 function tempDir(name: string): string {
@@ -25,6 +27,23 @@ function withCwd<T>(cwd: string, fn: () => T): T {
   } finally {
     process.chdir(originalCwd);
   }
+}
+
+function withTempAuthFile(credential: Record<string, unknown>) {
+  const dir = tempDir("pi-kimi-auth");
+  writeFileSync(join(dir, "auth.json"), JSON.stringify({ [PROVIDER_ID]: credential }), "utf8");
+  const originalDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  return {
+    cleanup() {
+      rmSync(dir, { recursive: true, force: true });
+      if (originalDir === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = originalDir;
+      }
+    },
+  };
 }
 
 function makePi() {
@@ -136,6 +155,133 @@ describe("extension tool registration", () => {
     assert.match(component.render(80).join("\n"), /"url": "https:\/\/example.com"/);
   });
 
+  it("shows effective tool sources in /kimi-settings", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const configPath = join(cwd, ".pi", "pi-provider-kimi-code.json");
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        tools: {
+          moonshot_search: { enabled: true },
+          kimi_datasource: { enabled: false },
+        },
+      }),
+      "utf8",
+    );
+    const { commands, pi } = makePi();
+    const titles: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalKimiApiKey = process.env.KIMI_API_KEY;
+    process.env.KIMI_API_KEY = "test-key";
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ usage: { limit: 100, remaining: 100 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    try {
+      withCwd(cwd, () => registerKimiCodeExtension(pi));
+      const kimiCommand = commands.get("kimi-settings");
+      assert.ok(kimiCommand);
+
+      await kimiCommand.handler("", {
+        cwd,
+        ui: {
+          select: async (title: string) => {
+            titles.push(title);
+            return "Done";
+          },
+          notify: () => {},
+        },
+      } as unknown as ExtensionCommandContext);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKimiApiKey === undefined) {
+        delete process.env.KIMI_API_KEY;
+      } else {
+        process.env.KIMI_API_KEY = originalKimiApiKey;
+      }
+    }
+
+    assert.match(titles[0], /moonshot_search: enabled \(project\)/);
+    assert.match(titles[0], /kimi_datasource: disabled \(project\)/);
+  });
+
+  it("refreshes Kimi usage OAuth token once on 401", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { commands, pi } = makePi();
+    const notifications: string[] = [];
+    const auth = withTempAuthFile({
+      type: "oauth",
+      access: "stale-access",
+      refresh: "refresh-1",
+      expires: Date.now() + 60_000,
+    });
+    const originalFetch = globalThis.fetch;
+    const originalKimiApiKey = process.env.KIMI_API_KEY;
+    delete process.env.KIMI_API_KEY;
+    const usageTokens: string[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/coding/v1/usages")) {
+        const headers = init?.headers as Record<string, string> | undefined;
+        usageTokens.push(String(headers?.Authorization ?? ""));
+        if (usageTokens.length === 1) return new Response("expired", { status: 401 });
+        return new Response(
+          JSON.stringify({
+            usage: { limit: 100, remaining: 99 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/oauth/token")) {
+        const bodyText = String(init?.body ?? "");
+        const body = new URLSearchParams(bodyText);
+        assert.equal(body.get("grant_type"), "refresh_token");
+        assert.equal(body.get("refresh_token"), "refresh-1");
+        return new Response(
+          JSON.stringify({
+            access_token: "fresh-access",
+            refresh_token: "refresh-2",
+            expires_in: 900,
+            scope: "kimi-code",
+            token_type: "Bearer",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+
+    try {
+      withCwd(cwd, () => registerKimiCodeExtension(pi));
+      const kimiCommand = commands.get("kimi-settings");
+      assert.ok(kimiCommand);
+
+      await kimiCommand.handler("", {
+        cwd,
+        ui: {
+          select: async () => "Done",
+          notify: (message: string) => {
+            notifications.push(message);
+          },
+        },
+      } as unknown as ExtensionCommandContext);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKimiApiKey === undefined) {
+        delete process.env.KIMI_API_KEY;
+      } else {
+        process.env.KIMI_API_KEY = originalKimiApiKey;
+      }
+      auth.cleanup();
+    }
+
+    assert.deepEqual(usageTokens, ["Bearer stale-access", "Bearer fresh-access"]);
+    assert.match(notifications[0], /Weekly limit: \[####################\] 99% left \(99\/100\)/);
+  });
+
   it("writes project config and updates active tools from /kimi-settings", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const configPath = join(cwd, ".pi", "pi-provider-kimi-code.json");
@@ -145,10 +291,8 @@ describe("extension tool registration", () => {
       "Edit project config (.pi/pi-provider-kimi-code.json)",
       "moonshot_search -> disabled, default collapsed",
       "Enable moonshot_search",
-      "Back",
       "moonshot_fetch -> disabled, default collapsed",
       "Expand previews by default",
-      "Back",
       "Back",
       "Done",
     ];
@@ -200,12 +344,20 @@ describe("extension tool registration", () => {
     assert.match(notifications[0], /Membership: Allegretto \(LEVEL_INTERMEDIATE\)/);
     assert.match(notifications[0], /Weekly limit: \[################----\] 80% left \(80\/100\)/);
     assert.match(notifications[0], /5h rate limit: \[###############-----\] 75% left \(150\/200\)/);
-    assert.equal(titles[0], "Kimi settings");
+    assert.match(titles[0], /^Kimi settings/);
+    assert.match(titles[0], /moonshot_search: disabled \(default\)/);
+    assert.match(titles[0], /kimi_datasource: disabled \(default\)/);
     assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
-      tools: {
-        moonshot_search: { enabled: true, default_collapsed: true },
-        moonshot_fetch: { enabled: false, default_collapsed: false },
-      },
+      tools: Object.fromEntries(
+        KIMI_TOOL_NAMES.map((name) => [
+          name,
+          name === "moonshot_search"
+            ? { enabled: true, default_collapsed: true }
+            : name === "moonshot_fetch"
+              ? { enabled: false, default_collapsed: false }
+              : { enabled: false, default_collapsed: true },
+        ]),
+      ),
     });
     assert.deepEqual(getActiveTools(), ["shell", "moonshot_search"]);
     assert.deepEqual(
