@@ -1,7 +1,7 @@
 # Architecture: pi-provider-kimi-code
 
 A pi custom provider extension that integrates [Kimi Code](https://kimi.com) models
-into the pi coding agent via OAuth device-code flow. Supports both Kimi's Anthropic
+into the Pi coding agent via OAuth device-code flow. Supports both Kimi's Anthropic
 Messages and OpenAI Chat Completions wire-compatible endpoints.
 
 ## Overview
@@ -15,13 +15,13 @@ models. It supports two authentication modes:
 The Kimi Code API is wire-compatible with both the Anthropic Messages and OpenAI Chat
 Completions formats. The extension picks which wire protocol to use via the
 `KIMI_CODE_PROTOCOL` environment variable. Supported values are `openai` (default)
-and `anthropic`. A `streamSimpleKimi()` wrapper sits on top of pi's built-in
+and `anthropic`. A `streamSimpleKimi()` wrapper sits on top of Pi's built-in
 streaming to:
 
 - upload large inline base64 images to Kimi's `/v1/files` endpoint as `ms://` references
 - inject Kimi's proprietary `prompt_cache_key` alongside Anthropic `cache_control`
 - apply env-level hyperparameter overrides (`temperature`, `top_p`, `max_completion_tokens`)
-- map pi's `reasoning` level to Kimi's `reasoning_effort` + `extra_body.thinking`
+- map Pi's `reasoning` level to Kimi's `reasoning_effort` + `extra_body.thinking`
 - suppress Kimi's `(Empty response: ...)` placeholder text blocks from the response stream
 
 ## File Structure
@@ -40,10 +40,10 @@ pi-provider-kimi-code/
     └── next-version.sh # Release version bump helper
 ```
 
-The package is intentionally a single-file extension. pi loads `index.ts` directly
+The package is intentionally a single-file extension. Pi loads `index.ts` directly
 via jiti (TypeScript-in-JS runtime), so no build step is required. The virtual modules
 `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent` are provided by
-the pi runtime; no npm dependencies are needed.
+the Pi runtime; no npm dependencies are needed.
 
 ## Provider Registration
 
@@ -63,13 +63,13 @@ The base URL can also be overridden with `KIMI_CODE_BASE_URL`. See
 
 ### Common Headers
 
-Every OAuth request and model API request includes Kimi CLI-style headers:
+Every OAuth request and model API request includes Kimi Code-style headers:
 
 | Header               | Value                               |
 | -------------------- | ----------------------------------- |
-| `User-Agent`         | `KimiCLI/1.30.0`                    |
-| `X-Msh-Platform`     | `kimi_cli`                          |
-| `X-Msh-Version`      | `1.30.0`                            |
+| `User-Agent`         | `kimi-code-cli/0.6.0`               |
+| `X-Msh-Platform`     | `kimi_code_cli`                     |
+| `X-Msh-Version`      | `0.6.0`                             |
 | `X-Msh-Device-Name`  | Hostname                            |
 | `X-Msh-Device-Model` | OS + kernel release + architecture  |
 | `X-Msh-Os-Version`   | `os.release()`                      |
@@ -82,7 +82,7 @@ fix for Linux / non-ASCII hostnames.
 
 | ID                | Name            | Reasoning | Input       | Context | Max Output |
 | ----------------- | --------------- | --------- | ----------- | ------- | ---------- |
-| `kimi-for-coding` | Kimi for Coding | yes       | text, image | 262 144 | 32 000     |
+| `kimi-for-coding` | Kimi for Coding | yes       | text, image | 256k    | 32k        |
 
 All costs are set to zero (free tier / OAuth-authenticated usage).
 
@@ -128,18 +128,18 @@ The OAuth host can be overridden with `KIMI_CODE_OAUTH_HOST` or `KIMI_OAUTH_HOST
 1. `requestDeviceAuthorization()` POSTs to the device authorization endpoint with
    `client_id`. It returns a `user_code`, `device_code`, and
    `verification_uri_complete`.
-2. pi opens the verification URL in the user's browser and displays the user code.
+2. Pi opens the verification URL in the user's browser and displays the user code.
 3. `requestDeviceToken()` polls the token endpoint at the server-specified interval
    (default 5 s) until the user completes authorization or the device code expires.
 4. On `expired_token`, the outer loop in `loginKimiCode()` automatically restarts the
    entire flow with a fresh device code.
 5. On success, credentials (`access_token`, `refresh_token`, `expires`) are persisted
-   by pi's credential store.
+   by Pi's credential store.
 
 ### Token Refresh
 
 `refreshKimiCodeToken()` sends a `grant_type=refresh_token` request. If the refresh
-token itself has expired (401/403), pi will prompt the user to re-login.
+token itself has expired (401/403), Pi will prompt the user to re-login.
 
 ## Device Identity
 
@@ -149,8 +149,8 @@ The extension keeps a stable device identifier in:
 ~/.pi/providers/kimi-coding/device_id
 ```
 
-This mirrors `kimi-cli` behavior more closely than the earlier per-process random ID,
-while keeping storage isolated to pi.
+This mirrors `kimi-code` behavior more closely than the earlier per-process random ID,
+while keeping storage isolated to Pi.
 
 ## Credential Mapping
 
@@ -327,8 +327,8 @@ Every unit below can be tested without touching the network, the filesystem, or
 #### Layer 4 — integration
 
 The I/O functions are tested end-to-end via `scripts/test_e2e.sh` (see
-[TESTING.md](./TESTING.md)). There is no unit-level test for `fetch` wrappers or
-OAuth polling loops; they are exercised by hitting the real upstream.
+[TESTING.md](./TESTING.md)). No unit-level tests cover `fetch` wrappers or
+OAuth polling loops; the E2E test script exercises them by hitting the real upstream.
 
 ### Extension points
 
@@ -338,7 +338,7 @@ thread it through the same boundary — read at the edge in `streamSimpleKimi` o
 
 | Env var                                                                            | Read site                                           | Layer        |
 | ---------------------------------------------------------------------------------- | --------------------------------------------------- | ------------ |
-| `KIMI_API_KEY`                                                                     | `streamSimpleKimi` (also pi core)                   | Orchestrator |
+| `KIMI_API_KEY`                                                                     | `streamSimpleKimi` (also Pi core)                   | Orchestrator |
 | `KIMI_CODE_PROTOCOL`                                                               | `PROTOCOL` constant                                 | Module load  |
 | `KIMI_CODE_BASE_URL`                                                               | `getBaseUrl` + `uploadKimiFile`                     | I/O edge     |
 | `KIMI_CODE_OAUTH_HOST` / `KIMI_OAUTH_HOST`                                         | `getOAuthHost`                                      | I/O edge     |
@@ -354,7 +354,7 @@ and (if the step needs new inputs) a new field on `KimiPayloadContext`.
 
 ### Why support both Anthropic and OpenAI wire protocols?
 
-Kimi Code's backend speaks both formats. Different pi users and downstream tools
+Kimi Code's backend speaks both formats. Different Pi users and downstream tools
 prefer different protocols — some want strict Anthropic compatibility for
 `cache_control` + thinking blocks, others need OpenAI's `reasoning_effort` and
 `extra_body` semantics. Selecting via `KIMI_CODE_PROTOCOL` at module load lets a
@@ -379,15 +379,14 @@ Three reasons:
 
 ### Why no build step?
 
-pi loads extensions via jiti, which transpiles TypeScript on-the-fly. A
+Pi loads extensions via jiti, which transpiles TypeScript on-the-fly. A
 zero-build setup reduces friction for both development and distribution.
 
 ### Why no dependencies?
 
 `@earendil-works/pi-ai` (for types and SDK streaming) and
 `@earendil-works/pi-coding-agent` (for `ExtensionAPI` type) are virtual modules
-injected by the pi runtime. The only Node.js APIs used are built-ins. There is
-nothing to install.
+injected by the Pi runtime. The only Node.js APIs used are built-ins. You don't need to install anything.
 
 ### Why a standalone package instead of a core patch?
 
@@ -407,7 +406,7 @@ pi install ~/workshop/pi-provider-kimi-code
 # After npm publish
 pi install npm:pi-provider-kimi-code
 
-# Inside pi:
+# Inside Pi:
 #   /model kimi-coding/kimi-for-coding
 #   /login kimi-coding
 

@@ -8,6 +8,8 @@ KIMI_API_KEY=sk-... ./scripts/test_e2e.sh
 
 ## What It Tests
 
+The test script covers the following checks:
+
 1. Smoke test in Anthropic mode
 2. Smoke test in OpenAI mode
 3. High-thinking extraction (thinking + answer + usage)

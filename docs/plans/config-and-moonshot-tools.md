@@ -13,7 +13,7 @@ Follow-up implemented in the same branch: `/kimi-settings` shows Kimi usage, edi
 ## Why now
 
 - The provider already needs more than env vars can comfortably hold (e.g. on/off switches for individual tools, future per-feature tuning).
-- `moonshot_search` / `moonshot_fetch` are real endpoints reachable with the OAuth token this provider already manages (see `kimi-cli/src/kimi_cli/auth/platforms.py:55-65`), but they should not auto-activate — users on different stacks (MCP web tools, pi without web needs) should not get them by surprise.
+- `moonshot_search` / `moonshot_fetch` are real endpoints reachable with the OAuth token this provider already manages (see `kimi-cli/src/kimi_cli/auth/platforms.py:55-65`), but they should not auto-activate — users on different stacks (Model Context Protocol (MCP) web tools, pi without web needs) should not get them by surprise.
 
 ## Config file
 
@@ -113,7 +113,7 @@ All under `tests/`, continuing to use `node:test`. No new devDeps.
 
 README gets a new section "Optional Moonshot tools" placed after "Environment variables". It includes:
 
-- One-paragraph description (search + fetch are Kimi Coding server-side tools, not pi built-ins)
+- One-paragraph description (search + fetch are Kimi Coding server-side tools, not Pi built-ins)
 - The exact config file path and example JSON
 - Behavior notes: requires OAuth login, requires an active Kimi Code Plan, both default off
 - Brief comparison with MCP-provided web tools so users don't double up
