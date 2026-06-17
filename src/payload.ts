@@ -46,9 +46,11 @@ export function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function mapThinkingLevel(level?: string): { effort: string | null; enabled: boolean } | undefined {
+function mapThinkingLevel(
+  level?: string,
+): { effort: string | undefined; enabled: boolean } | undefined {
   if (!level) return undefined;
-  if (level === "none" || level === "off") return { effort: null, enabled: false };
+  if (level === "none" || level === "off") return { effort: undefined, enabled: false };
   if (level === "minimal" || level === "low") return { effort: "low", enabled: true };
   if (level === "medium") return { effort: "medium", enabled: true };
   if (level === "high" || level === "xhigh") return { effort: "high", enabled: true };
@@ -445,22 +447,35 @@ export async function applyKimiPayloadMutations(
     payload.max_completion_tokens = maxCompletionTokens;
   }
 
-  // 5. Reasoning effort mapping.
+  // 5. Spread extra_body into top-level payload before reasoning mapping,
+  //    matching upstream (Kimi expects thinking etc. at the root).
+  if (isRecord(payload.extra_body)) {
+    const extraBody = payload.extra_body as JsonRecord;
+    delete payload.extra_body;
+    for (const [key, value] of Object.entries(extraBody)) {
+      if (payload[key] === undefined) {
+        payload[key] = value;
+      }
+    }
+  }
+
+  // 6. Reasoning effort mapping. Merges into any existing top-level thinking
+  //    field (which may have come from extra_body above).
   const resolvedReasoning = resolveThinkingLevel(ctx);
   if (resolvedReasoning) {
     const mapped = mapThinkingLevel(resolvedReasoning);
     if (mapped) {
-      payload.reasoning_effort = mapped.effort;
-      const extraBody = isRecord(payload.extra_body) ? payload.extra_body : {};
-      const oldThinking = isRecord(extraBody.thinking) ? extraBody.thinking : {};
-      extraBody.thinking = {
+      if (mapped.effort !== undefined) {
+        payload.reasoning_effort = mapped.effort;
+      }
+      const oldThinking = isRecord(payload.thinking) ? payload.thinking : {};
+      payload.thinking = {
         ...oldThinking,
         type: mapped.enabled ? "enabled" : "disabled",
       };
       if (mapped.enabled && ctx.thinkingKeep) {
-        (extraBody.thinking as JsonRecord).keep = ctx.thinkingKeep;
+        (payload.thinking as JsonRecord).keep = ctx.thinkingKeep;
       }
-      payload.extra_body = extraBody;
     }
   }
 }
