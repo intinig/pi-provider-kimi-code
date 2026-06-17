@@ -138,7 +138,7 @@ export function buildKimiDatasourceTool(options: BuildKimiToolOptions = {}) {
             }
           : {
               method: "get_data_source_desc",
-              params: { data_source_name: params.data_source_name },
+              params: { name: params.data_source_name },
             };
 
         const response = await fetchWithAuthRetry(deps, accessToken, (token) =>
