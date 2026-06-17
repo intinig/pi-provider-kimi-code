@@ -433,7 +433,12 @@ export async function applyKimiPayloadMutations(
     if (resolved) payload.prompt_cache_key = resolved;
   }
 
-  // 4. Normalize deprecated max_tokens and apply env-level hyperparameter
+  // 4. Request usage stats on streaming responses.
+  if (payload.stream === true) {
+    payload.stream_options = { include_usage: true };
+  }
+
+  // 5. Normalize deprecated max_tokens and apply env-level hyperparameter
   //    overrides (pre-parsed into numbers by caller).
   if (payload.max_completion_tokens === undefined && typeof payload.max_tokens === "number") {
     payload.max_completion_tokens = payload.max_tokens;
