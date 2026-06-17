@@ -109,7 +109,11 @@ function extractResponseFiles(data: DatasourceToolResponse): string[] {
   if (!Array.isArray(raw.files)) return [];
   const names: string[] = [];
   for (const file of raw.files) {
-    if (typeof file === "object" && file !== null && typeof (file as Record<string, unknown>).name === "string") {
+    if (
+      typeof file === "object" &&
+      file !== null &&
+      typeof (file as Record<string, unknown>).name === "string"
+    ) {
       names.push((file as Record<string, unknown>).name as string);
     }
   }
