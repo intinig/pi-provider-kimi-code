@@ -104,6 +104,41 @@ function extractResponseText(data: DatasourceToolResponse): string {
   return JSON.stringify(data, null, 2);
 }
 
+function extractResponseFiles(data: DatasourceToolResponse): string[] {
+  const raw = data as Record<string, unknown>;
+  if (!Array.isArray(raw.files)) return [];
+  const names: string[] = [];
+  for (const file of raw.files) {
+    if (typeof file === "object" && file !== null && typeof (file as Record<string, unknown>).name === "string") {
+      names.push((file as Record<string, unknown>).name as string);
+    }
+  }
+  return names;
+}
+
+const REQUEST_ID_HEADERS = [
+  "x-request-id",
+  "x-trace-id",
+  "x-msh-request-id",
+  "x-msh-trace-id",
+  "request-id",
+];
+
+function extractRequestId(headers: Headers): string | undefined {
+  for (const key of REQUEST_ID_HEADERS) {
+    const value = headers.get(key);
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function buildTraceLine(toolCallId: string, requestId: string | undefined): string {
+  const parts: string[] = [];
+  if (requestId) parts.push(`request-id: ${requestId}`);
+  parts.push(`tool-call-id: ${toolCallId}`);
+  return `\n\n[kimi-datasource] ${parts.join(" · ")}`;
+}
+
 export function buildKimiDatasourceTool(options: BuildKimiToolOptions = {}) {
   const deps = buildKimiToolDeps(options);
   const defaultCollapsed = options.defaultCollapsed ?? true;
@@ -150,10 +185,13 @@ export function buildKimiDatasourceTool(options: BuildKimiToolOptions = {}) {
           }),
         );
 
+        const requestId = extractRequestId(response.headers);
+        const trace = buildTraceLine(toolCallId, requestId);
+
         if (!response.ok) {
           const bodyText = await readErrorBody(response);
           return errorResult<string>(
-            `kimi_datasource failed: ${response.status}${bodyText ? ` ${bodyText}` : ""}`,
+            `kimi_datasource failed: ${response.status}${bodyText ? ` ${bodyText}` : ""}${trace}`,
           );
         }
 
@@ -163,10 +201,16 @@ export function buildKimiDatasourceTool(options: BuildKimiToolOptions = {}) {
             typeof data.error === "string"
               ? data.error
               : JSON.stringify(data.error ?? data, null, 2);
-          return errorResult<string>(`kimi_datasource error: ${errorText}`);
+          return errorResult<string>(`kimi_datasource error: ${errorText}${trace}`);
         }
 
-        const text = extractResponseText(data);
+        let text = extractResponseText(data);
+        const files = extractResponseFiles(data);
+        if (files.length > 0) {
+          text += `\n\nNote: the backend returned ${files.length} file(s) that cannot be written in this context: ${files.join(", ")}`;
+        }
+        text += trace;
+
         return {
           content: [{ type: "text", text }],
           details: text,
