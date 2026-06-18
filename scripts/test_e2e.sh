@@ -2829,6 +2829,32 @@ fi
 run_pi_test "Test 1: Anthropic Protocol (Default)" anthropic "Who are you? Respond in one sentence." --mode print
 run_pi_test "Test 2: OpenAI Protocol" openai "Who are you? Respond in one sentence." --mode print
 
+# ---------------------------------------------------------------------------
+# Test 2b: Thinking level x protocol matrix
+# ---------------------------------------------------------------------------
+log "=== Test 2b: Thinking Level x Protocol Matrix ==="
+KIMI_E2E_T2B_PASS=0
+KIMI_E2E_T2B_FAIL=0
+for protocol in anthropic openai; do
+  for level in off low medium high; do
+    label="$protocol/thinking=$level"
+    if KIMI_CODE_PROTOCOL="$protocol" "$PI_BIN" -ne -e "$EXT_DIR" --model "$KIMI_E2E_MODEL" \
+      -p "What is 17*23? Reply with just the number." --thinking "$level" --mode print > /dev/null 2>&1; then
+      log "  PASS  $label"
+      KIMI_E2E_T2B_PASS=$((KIMI_E2E_T2B_PASS + 1))
+    else
+      log "  FAIL  $label"
+      KIMI_E2E_T2B_FAIL=$((KIMI_E2E_T2B_FAIL + 1))
+    fi
+  done
+done
+log "  Result: $KIMI_E2E_T2B_PASS passed, $KIMI_E2E_T2B_FAIL failed"
+if [ "$KIMI_E2E_T2B_FAIL" -gt 0 ]; then
+  log "  FAILED: $KIMI_E2E_T2B_FAIL thinking level + protocol combo(s) failed."
+  exit 1
+fi
+printf '\n'
+
 # Test 3: save full JSONL to /tmp, extract thinking + text summary
 log "=== Test 3: Thinking (High) ==="
 KIMI_E2E_T3_JSONL="/tmp/kimi_e2e_test3_$(date +%s).jsonl"
