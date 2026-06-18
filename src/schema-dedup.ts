@@ -79,6 +79,7 @@ function nextDefKey(existing: Set<string>, index: number): string {
 // ---------------------------------------------------------------------------
 
 function deduplicateSchema(schema: JsonRecord): JsonRecord {
+  const originalSize = jsonSize(schema);
   const result: JsonRecord = JSON.parse(JSON.stringify(schema));
   const defs: JsonRecord = isRecord(result.$defs) ? (result.$defs as JsonRecord) : {};
   const existingKeys = new Set(Object.keys(defs));
@@ -98,11 +99,15 @@ function deduplicateSchema(schema: JsonRecord): JsonRecord {
       const active = paths.filter((p) => !replaced.some((r) => isDescendant(p, r)));
       if (active.length < 2) continue;
 
-      const size = Buffer.byteLength(serialized);
-      const savings = (active.length - 1) * size - 40;
+      const key = nextDefKey(existingKeys, defIndex++);
+      const refObject = JSON.stringify({ $ref: `#/$defs/${key}` });
+      const refSize = Buffer.byteLength(refObject);
+      const fragmentSize = Buffer.byteLength(serialized);
+      const defsEntryOverhead = Buffer.byteLength(JSON.stringify(key)) + 1;
+      const savings =
+        active.length * fragmentSize - (fragmentSize + defsEntryOverhead + active.length * refSize);
       if (savings <= 0) continue;
 
-      const key = nextDefKey(existingKeys, defIndex++);
       existingKeys.add(key);
       defs[key] = JSON.parse(serialized);
 
@@ -118,6 +123,8 @@ function deduplicateSchema(schema: JsonRecord): JsonRecord {
   if (Object.keys(defs).length > 0) {
     result.$defs = defs;
   }
+
+  if (jsonSize(result) >= originalSize) return schema;
   return result;
 }
 

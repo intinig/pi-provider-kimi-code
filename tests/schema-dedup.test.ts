@@ -301,4 +301,76 @@ describe("optimizeToolSchemas", () => {
     const serialized = JSON.stringify(params);
     assert.ok(serialized.includes('"$ref"'), "should contain $ref references");
   });
+
+  it("never increases schema size — small fragments with marginal savings", () => {
+    resetToolSchemaCache();
+    const repeated = { type: "string", description: "x".repeat(30) };
+    const schema: Record<string, unknown> = {
+      type: "object",
+      properties: {} as Record<string, unknown>,
+    };
+    const props = schema.properties as Record<string, unknown>;
+    for (let i = 0; i < 2; i++) {
+      props[`f${i}`] = JSON.parse(JSON.stringify(repeated));
+    }
+    const pad = "y".repeat(14_000 - Buffer.byteLength(JSON.stringify(schema)));
+    props.pad = { type: "string", description: pad };
+
+    const originalSize = Buffer.byteLength(JSON.stringify(schema));
+    assert.ok(
+      originalSize > 14_000 && originalSize < 15_100,
+      `precondition: near limit, got ${originalSize}`,
+    );
+
+    const tools = [
+      {
+        type: "function",
+        function: { name: "edge", description: "test", parameters: schema },
+      },
+    ];
+    const result = optimizeToolSchemas(tools);
+    const optimizedParams = (
+      (result[0] as Record<string, unknown>).function as Record<string, unknown>
+    ).parameters as Record<string, unknown>;
+    const optimizedSize = Buffer.byteLength(JSON.stringify(optimizedParams));
+    assert.ok(
+      optimizedSize <= originalSize,
+      `must not increase: ${optimizedSize} > ${originalSize}`,
+    );
+  });
+
+  it("never pushes a schema from under 15KB to over 15KB", () => {
+    resetToolSchemaCache();
+    const repeated = { type: "string", description: "x".repeat(25) };
+    const schema: Record<string, unknown> = {
+      type: "object",
+      properties: {} as Record<string, unknown>,
+    };
+    const props = schema.properties as Record<string, unknown>;
+    for (let i = 0; i < 2; i++) {
+      props[`f${i}`] = JSON.parse(JSON.stringify(repeated));
+    }
+    const targetSize = 14_995;
+    const currentSize = Buffer.byteLength(JSON.stringify(schema));
+    if (currentSize < targetSize) {
+      props.pad = { type: "string", description: "z".repeat(targetSize - currentSize) };
+    }
+    const originalSize = Buffer.byteLength(JSON.stringify(schema));
+
+    const tools = [
+      {
+        type: "function",
+        function: { name: "boundary", description: "test", parameters: schema },
+      },
+    ];
+    const result = optimizeToolSchemas(tools);
+    const optimizedParams = (
+      (result[0] as Record<string, unknown>).function as Record<string, unknown>
+    ).parameters as Record<string, unknown>;
+    const optimizedSize = Buffer.byteLength(JSON.stringify(optimizedParams));
+    assert.ok(
+      optimizedSize <= originalSize,
+      `must not grow past original (${originalSize}): got ${optimizedSize}`,
+    );
+  });
 });
