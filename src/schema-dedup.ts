@@ -136,12 +136,20 @@ let cachedFingerprint: string | null = null;
 let cachedTools: unknown[] | null = null;
 
 const opaqueIds = new WeakMap<object, number>();
+const symbolIds = new Map<symbol, number>();
 let nextOpaqueId = 0;
 
 function opaqueTag(t: unknown): string {
   if (t === undefined) return "<undefined>";
   if (t === null) return "<null>";
-  if (typeof t === "symbol") return `<symbol:${String(t)}>`;
+  if (typeof t === "symbol") {
+    let id = symbolIds.get(t);
+    if (id === undefined) {
+      id = nextOpaqueId++;
+      symbolIds.set(t, id);
+    }
+    return `<symbol:${id}>`;
+  }
   if (typeof t === "object" || typeof t === "function") {
     let id = opaqueIds.get(t as object);
     if (id === undefined) {
@@ -153,14 +161,20 @@ function opaqueTag(t: unknown): string {
   return `<${typeof t}:${String(t)}>`;
 }
 
+function stableReplacer(_key: string, value: unknown): unknown {
+  if (typeof value === "function" || typeof value === "symbol") {
+    return opaqueTag(value);
+  }
+  return value;
+}
+
 function toolsFingerprint(tools: unknown[]): string {
   const hash = createHash("sha256");
   for (const t of tools) {
-    const serialized = JSON.stringify(t);
-    if (serialized !== undefined) {
-      hash.update(serialized);
+    if (t === undefined) {
+      hash.update("<undefined>");
     } else {
-      hash.update(opaqueTag(t));
+      hash.update(JSON.stringify(t, stableReplacer));
     }
     hash.update("|");
   }
