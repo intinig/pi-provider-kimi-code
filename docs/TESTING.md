@@ -34,7 +34,7 @@ The test script covers the following checks:
 ## Issue #19 Reproduction Script
 
 ```bash
-KIMI_API_KEY=sk-... ./scripts/repro_issue19.sh
+KIMI_API_KEY=sk-... ./scripts/test_payload_thinking.sh
 ```
 
 Tests payload variants against both OpenAI (`/chat/completions`) and Anthropic (`/messages`) endpoints on the Kimi Code API. Verifies that the server actually respects thinking configuration by checking response content, not just HTTP status.
