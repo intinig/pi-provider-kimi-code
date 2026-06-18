@@ -10,4 +10,4 @@ repos:
         name: oxfmt
         entry: npx oxfmt
         language: system
-        types_or: [javascript, jsx, ts, tsx]
+        types_or: [javascript, jsx, ts, tsx, markdown, json]

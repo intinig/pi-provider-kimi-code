@@ -9,6 +9,10 @@ function renderText(component: { render: (width: number) => string[] }): string 
   return component.render(80).join("\n");
 }
 
+function resultText(result: { content: Array<{ type: string; text?: string }> }): string {
+  return result.content[0].type === "text" ? (result.content[0].text ?? "") : "";
+}
+
 describe("kimi_datasource datasource", () => {
   it("calls get_data_source_desc when api_name is omitted", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -41,12 +45,11 @@ describe("kimi_datasource datasource", () => {
     assert.equal(calls[0].url, "https://api.kimi.com/coding/v1/tools");
     assert.deepEqual(JSON.parse(calls[0].init.body as string), {
       method: "get_data_source_desc",
-      params: { data_source_name: "arxiv" },
+      params: { name: "arxiv" },
     });
-    assert.equal(
-      result.content[0].type === "text" ? result.content[0].text : "",
-      "Available APIs: search, detail",
-    );
+    const text = resultText(result);
+    assert.ok(text.startsWith("Available APIs: search, detail"));
+    assert.match(text, /\[kimi-datasource\] tool-call-id: tool-call-1/);
   });
 
   it("calls call_data_source_tool when api_name is provided", async () => {
@@ -85,10 +88,9 @@ describe("kimi_datasource datasource", () => {
         params: { query: "transformer" },
       },
     });
-    assert.equal(
-      result.content[0].type === "text" ? result.content[0].text : "",
-      "Paper found: Attention Is All You Need",
-    );
+    const text = resultText(result);
+    assert.ok(text.startsWith("Paper found: Attention Is All You Need"));
+    assert.match(text, /\[kimi-datasource\] tool-call-id: tool-call-1/);
   });
 
   it("returns an error when OAuth credentials are missing", async () => {
@@ -130,7 +132,9 @@ describe("kimi_datasource datasource", () => {
       undefined as never,
     );
 
-    assert.match(result.content[0].type === "text" ? result.content[0].text : "", /500/);
+    const text = resultText(result);
+    assert.match(text, /500/);
+    assert.match(text, /\[kimi-datasource\] tool-call-id: tool-call-1/);
   });
 
   it("returns an error when is_success is false", async () => {
@@ -152,7 +156,9 @@ describe("kimi_datasource datasource", () => {
       undefined as never,
     );
 
-    assert.match(result.content[0].type === "text" ? result.content[0].text : "", /invalid api/);
+    const text = resultText(result);
+    assert.match(text, /invalid api/);
+    assert.match(text, /\[kimi-datasource\] tool-call-id: tool-call-1/);
   });
 
   it("refreshes OAuth credentials once on 401 and retries", async () => {
@@ -196,7 +202,9 @@ describe("kimi_datasource datasource", () => {
       (calls[1].init.headers as Record<string, string>).Authorization,
       "Bearer fresh-token",
     );
-    assert.equal(result.content[0].type === "text" ? result.content[0].text : "", "ok");
+    const text = resultText(result);
+    assert.ok(text.startsWith("ok"));
+    assert.match(text, /\[kimi-datasource\] tool-call-id: tool-call-1/);
   });
 
   it("uses KIMI_DATASOURCE_API_URL when provided", async () => {
@@ -258,6 +266,61 @@ describe("kimi_datasource datasource", () => {
 
     const lines = component.render(40);
     assert.ok(lines.every((line) => visibleWidth(line) <= 40));
+  });
+
+  it("includes request-id in trace when header is present", async () => {
+    const mockFetch: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({ is_success: true, result: { assistant: [{ text: "data" }] } }),
+        { status: 200, headers: { "Content-Type": "application/json", "x-request-id": "req-abc" } },
+      );
+
+    const tool = buildKimiDatasourceTool({
+      deps: { fetch: mockFetch, getAccessToken: () => "oauth-token" },
+    });
+
+    const result = await tool.execute(
+      "tc-42",
+      { data_source_name: "arxiv" },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+
+    const text = resultText(result);
+    assert.match(text, /request-id: req-abc/);
+    assert.match(text, /tool-call-id: tc-42/);
+  });
+
+  it("notes returned files that cannot be written", async () => {
+    const mockFetch: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          is_success: true,
+          result: { assistant: [{ text: "data" }] },
+          files: [
+            { name: "/tmp/output.csv", content: "a,b\n1,2\n" },
+            { name: "/tmp/output_extra.csv", content: "x" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+
+    const tool = buildKimiDatasourceTool({
+      deps: { fetch: mockFetch, getAccessToken: () => "oauth-token" },
+    });
+
+    const result = await tool.execute(
+      "tool-call-1",
+      { data_source_name: "world_bank_open_data", api_name: "query", params: { country: "CN" } },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+
+    const text = resultText(result);
+    assert.match(text, /2 file\(s\)/);
+    assert.match(text, /\/tmp\/output\.csv/);
   });
 
   it("renders datasource result expanded when configured", () => {

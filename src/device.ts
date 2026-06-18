@@ -2,6 +2,7 @@
 // headers, and the cross-platform device-model string. Pure helpers live near
 // the side-effecting one-shots (file IO, exec) they support.
 
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -96,11 +97,24 @@ export function computeDeviceModel(input: DeviceModelInput): string {
   return `${system} ${arch}`.trim();
 }
 
+function macOsProductVersion(): string | undefined {
+  try {
+    const version = execFileSync("/usr/bin/sw_vers", ["-productVersion"], {
+      encoding: "utf-8",
+      timeout: 1000,
+    }).trim();
+    return version.length > 0 ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function getDeviceModel(): string {
   return computeDeviceModel({
     platform: process.platform,
     release: os.release(),
     arch: os.machine() || process.arch,
+    macVersion: process.platform === "darwin" ? macOsProductVersion() : undefined,
   });
 }
 
