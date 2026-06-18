@@ -1,6 +1,8 @@
 // Tool schema deduplication: extract repeated sub-schemas into $defs/$ref
 // to stay under Moonshot's ~15 KB per-tool function.parameters limit.
 
+import { createHash } from "node:crypto";
+
 import type { JsonRecord } from "./payload.ts";
 
 const TOOL_SCHEMA_SIZE_THRESHOLD = 14_000;
@@ -116,15 +118,21 @@ let cachedFingerprint: string | null = null;
 let cachedTools: unknown[] | null = null;
 
 function toolsFingerprint(tools: unknown[]): string {
-  return tools
-    .map((t) => {
-      if (!isRecord(t) || !isRecord(t.function)) return "?";
-      const fn = t.function as JsonRecord;
-      const name = String(fn.name ?? "?");
-      const paramLen = isRecord(fn.parameters) ? JSON.stringify(fn.parameters).length : 0;
-      return `${name}:${paramLen}`;
-    })
-    .join(",");
+  const hash = createHash("sha256");
+  for (const t of tools) {
+    if (!isRecord(t) || !isRecord(t.function)) {
+      hash.update("?|");
+      continue;
+    }
+    const fn = t.function as JsonRecord;
+    hash.update(String(fn.name ?? "?"));
+    hash.update("|");
+    if (isRecord(fn.parameters)) {
+      hash.update(JSON.stringify(fn.parameters));
+    }
+    hash.update("|");
+  }
+  return hash.digest("hex");
 }
 
 export function optimizeToolSchemas(tools: unknown[]): unknown[] {

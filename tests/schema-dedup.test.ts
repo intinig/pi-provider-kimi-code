@@ -120,6 +120,45 @@ describe("optimizeToolSchemas", () => {
     );
   });
 
+  it("invalidates cache when schema content differs but serialized length is identical", () => {
+    resetToolSchemaCache();
+    const toolsV1 = [
+      {
+        type: "function",
+        function: {
+          name: "t",
+          description: "test",
+          parameters: { type: "object", properties: { alpha: { type: "string" } } },
+        },
+      },
+    ];
+    const toolsV2 = [
+      {
+        type: "function",
+        function: {
+          name: "t",
+          description: "test",
+          parameters: { type: "object", properties: { bravo: { type: "string" } } },
+        },
+      },
+    ];
+    assert.strictEqual(
+      JSON.stringify(toolsV1[0].function.parameters).length,
+      JSON.stringify(toolsV2[0].function.parameters).length,
+      "precondition: both schemas must have identical serialized length",
+    );
+    const result1 = optimizeToolSchemas(toolsV1);
+    const result2 = optimizeToolSchemas(toolsV2);
+    assert.notStrictEqual(result1, result2, "same length but different content must bust cache");
+    const props = (
+      (result2[0] as Record<string, unknown>).function as Record<string, unknown>
+    ).parameters as Record<string, unknown>;
+    assert.ok(
+      (props.properties as Record<string, unknown>).bravo,
+      "should have bravo from v2, not alpha from v1",
+    );
+  });
+
   it("handles tools without function.parameters gracefully", () => {
     resetToolSchemaCache();
     const tools = [{ type: "function", function: { name: "bare", description: "no params" } }];
