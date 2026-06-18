@@ -135,6 +135,24 @@ function deduplicateSchema(schema: JsonRecord): JsonRecord {
 let cachedFingerprint: string | null = null;
 let cachedTools: unknown[] | null = null;
 
+const opaqueIds = new WeakMap<object, number>();
+let nextOpaqueId = 0;
+
+function opaqueTag(t: unknown): string {
+  if (t === undefined) return "<undefined>";
+  if (t === null) return "<null>";
+  if (typeof t === "symbol") return `<symbol:${String(t)}>`;
+  if (typeof t === "object" || typeof t === "function") {
+    let id = opaqueIds.get(t as object);
+    if (id === undefined) {
+      id = nextOpaqueId++;
+      opaqueIds.set(t as object, id);
+    }
+    return `<${typeof t}:${id}>`;
+  }
+  return `<${typeof t}:${String(t)}>`;
+}
+
 function toolsFingerprint(tools: unknown[]): string {
   const hash = createHash("sha256");
   for (const t of tools) {
@@ -142,7 +160,7 @@ function toolsFingerprint(tools: unknown[]): string {
     if (serialized !== undefined) {
       hash.update(serialized);
     } else {
-      hash.update(`<${typeof t}>`);
+      hash.update(opaqueTag(t));
     }
     hash.update("|");
   }
