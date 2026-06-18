@@ -200,6 +200,16 @@ describe("optimizeToolSchemas", () => {
     assert.doesNotThrow(() => optimizeToolSchemas(tools));
   });
 
+  it("distinguishes different non-serializable types in cache fingerprint", () => {
+    resetToolSchemaCache();
+    const result1 = optimizeToolSchemas([undefined] as unknown[]);
+    const result2 = optimizeToolSchemas([() => {}] as unknown[]);
+    const result3 = optimizeToolSchemas([Symbol("x")] as unknown[]);
+    assert.notStrictEqual(result1, result2, "undefined vs function must not collide");
+    assert.notStrictEqual(result2, result3, "function vs symbol must not collide");
+    assert.notStrictEqual(result1, result3, "undefined vs symbol must not collide");
+  });
+
   it("returns original array when no tools exceed threshold", () => {
     resetToolSchemaCache();
     const smallTools = [
