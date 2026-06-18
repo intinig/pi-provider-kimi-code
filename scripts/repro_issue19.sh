@@ -221,9 +221,9 @@ test("E2: OpenAI stream + reasoning high + extra_body (old)", lambda: openai("op
 }))
 
 # -------------------------------------------------------------------------
-# Group F: Streaming + fixed combos + stream_options
+# Group F: Streaming + fixed combos + stream_options (both endpoints)
 # -------------------------------------------------------------------------
-test("F1: OpenAI stream + thinking disabled at top level (fixed)", lambda: openai("openai", {
+test("F1: OpenAI stream + thinking disabled (fixed)", lambda: openai("openai", {
     "model": "kimi-for-coding",
     "messages": [{"role": "user", "content": "Say hello in one word."}],
     "max_completion_tokens": 32,
@@ -232,7 +232,7 @@ test("F1: OpenAI stream + thinking disabled at top level (fixed)", lambda: opena
     "stream_options": {"include_usage": True},
 }))
 
-test("F2: OpenAI stream + thinking enabled at top level (fixed)", lambda: openai("openai", {
+test("F2: OpenAI stream + thinking enabled (fixed)", lambda: openai("openai", {
     "model": "kimi-for-coding",
     "messages": [{"role": "user", "content": "Say hello in one word."}],
     "max_completion_tokens": 32,
@@ -240,6 +240,27 @@ test("F2: OpenAI stream + thinking enabled at top level (fixed)", lambda: openai
     "reasoning_effort": "high",
     "thinking": {"type": "enabled", "keep": "all"},
     "stream_options": {"include_usage": True},
+}))
+
+test("F3: Anthropic stream + thinking disabled (fixed)", lambda: anthropic("anthropic", {
+    "model": "kimi-for-coding",
+    "messages": [{"role": "user", "content": [
+        {"type": "text", "text": "Say hello in one word."}
+    ]}],
+    "max_tokens": 32,
+    "stream": True,
+    "thinking": {"type": "disabled"},
+}))
+
+test("F4: Anthropic stream + thinking enabled (fixed)", lambda: anthropic("anthropic", {
+    "model": "kimi-for-coding",
+    "messages": [{"role": "user", "content": [
+        {"type": "text", "text": "Say hello in one word."}
+    ]}],
+    "max_tokens": 32,
+    "stream": True,
+    "reasoning_effort": "high",
+    "thinking": {"type": "enabled", "keep": "all"},
 }))
 
 # -------------------------------------------------------------------------
