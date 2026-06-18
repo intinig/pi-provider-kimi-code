@@ -120,16 +120,7 @@ let cachedTools: unknown[] | null = null;
 function toolsFingerprint(tools: unknown[]): string {
   const hash = createHash("sha256");
   for (const t of tools) {
-    if (!isRecord(t) || !isRecord(t.function)) {
-      hash.update("?|");
-      continue;
-    }
-    const fn = t.function as JsonRecord;
-    hash.update(String(fn.name ?? "?"));
-    hash.update("|");
-    if (isRecord(fn.parameters)) {
-      hash.update(JSON.stringify(fn.parameters));
-    }
+    hash.update(JSON.stringify(t));
     hash.update("|");
   }
   return hash.digest("hex");

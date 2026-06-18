@@ -159,6 +159,23 @@ describe("optimizeToolSchemas", () => {
     );
   });
 
+  it("invalidates cache when description changes but schema stays the same", () => {
+    resetToolSchemaCache();
+    const params = { type: "object", properties: { x: { type: "string" } } };
+    const toolsV1 = [
+      { type: "function", function: { name: "t", description: "FIRST", parameters: params } },
+    ];
+    const toolsV2 = [
+      { type: "function", function: { name: "t", description: "SECOND", parameters: params } },
+    ];
+    const result1 = optimizeToolSchemas(toolsV1);
+    const result2 = optimizeToolSchemas(toolsV2);
+    assert.notStrictEqual(result1, result2, "description change must bust cache");
+    const desc = ((result2[0] as Record<string, unknown>).function as Record<string, unknown>)
+      .description;
+    assert.strictEqual(desc, "SECOND", "should reflect updated description");
+  });
+
   it("handles tools without function.parameters gracefully", () => {
     resetToolSchemaCache();
     const tools = [{ type: "function", function: { name: "bare", description: "no params" } }];
