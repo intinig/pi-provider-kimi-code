@@ -309,6 +309,31 @@ describe("optimizeToolSchemas", () => {
         second: [null],
       },
       {
+        name: "top-level NaN vs null",
+        first: Number.NaN,
+        second: null,
+      },
+      {
+        name: "top-level Infinity vs null",
+        first: Number.POSITIVE_INFINITY,
+        second: null,
+      },
+      {
+        name: "regular expressions",
+        first: /first/,
+        second: /second/,
+      },
+      {
+        name: "errors",
+        first: new Error("first"),
+        second: new Error("second"),
+      },
+      {
+        name: "promises",
+        first: Promise.resolve("first"),
+        second: Promise.resolve("second"),
+      },
+      {
         name: "different empty maps",
         first: new Map([["first", 1]]),
         second: new Map([["second", 2]]),
@@ -317,6 +342,31 @@ describe("optimizeToolSchemas", () => {
         name: "different empty sets",
         first: new Set(["first"]),
         second: new Set(["second"]),
+      },
+      {
+        name: "array buffers",
+        first: new Uint8Array([1]).buffer,
+        second: new Uint8Array([2]).buffer,
+      },
+      {
+        name: "data views",
+        first: new DataView(new Uint8Array([1]).buffer),
+        second: new DataView(new Uint8Array([2]).buffer),
+      },
+      {
+        name: "weak maps",
+        first: new WeakMap([[{}, "first"]]),
+        second: new WeakMap([[{}, "second"]]),
+      },
+      {
+        name: "weak sets",
+        first: new WeakSet([{}]),
+        second: new WeakSet([{}]),
+      },
+      {
+        name: "objects with identical toJSON output",
+        first: { toJSON: () => "same" },
+        second: { toJSON: () => "same" },
       },
     ];
 

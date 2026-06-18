@@ -135,53 +135,92 @@ function deduplicateSchema(schema: JsonRecord): JsonRecord {
 let cachedFingerprint: string | null = null;
 let cachedTools: unknown[] | null = null;
 
-const opaqueIds = new WeakMap<object, number>();
+const objectIds = new WeakMap<object, number>();
 const symbolIds = new Map<symbol, number>();
 let nextOpaqueId = 0;
 
-function opaqueTag(t: unknown): string {
-  if (t === undefined) return "<undefined>";
-  if (t === null) return "<null>";
-  if (typeof t === "symbol") {
-    let id = symbolIds.get(t);
-    if (id === undefined) {
-      id = nextOpaqueId++;
-      symbolIds.set(t, id);
-    }
-    return `<symbol:${id}>`;
+function identityId(t: object): number {
+  let id = objectIds.get(t);
+  if (id === undefined) {
+    id = nextOpaqueId++;
+    objectIds.set(t, id);
   }
-  if (typeof t === "object" || typeof t === "function") {
-    let id = opaqueIds.get(t as object);
-    if (id === undefined) {
-      id = nextOpaqueId++;
-      opaqueIds.set(t as object, id);
-    }
-    return `<${typeof t}:${id}>`;
-  }
-  return `<${typeof t}:${String(t)}>`;
+  return id;
 }
 
-function stableReplacer(_key: string, value: unknown): unknown {
-  if (value === undefined) return "<undefined>";
-  if (typeof value === "function" || typeof value === "symbol") return opaqueTag(value);
-  if (typeof value === "bigint") return `<bigint:${value}>`;
-  if (value instanceof Map) return `<Map:${opaqueTag(value)}>`;
-  if (value instanceof Set) return `<Set:${opaqueTag(value)}>`;
-  return value;
+function symbolId(t: symbol): number {
+  let id = symbolIds.get(t);
+  if (id === undefined) {
+    id = nextOpaqueId++;
+    symbolIds.set(t, id);
+  }
+  return id;
 }
 
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, stableReplacer);
-  } catch {
-    return opaqueTag(value);
+function isPlainObject(v: object): boolean {
+  const proto = Object.getPrototypeOf(v);
+  return proto === null || proto === Object.prototype;
+}
+
+function hashValue(hash: ReturnType<typeof createHash>, value: unknown, seen: Set<unknown>): void {
+  if (value === null) {
+    hash.update("z");
+    return;
   }
+  if (value === undefined) {
+    hash.update("u");
+    return;
+  }
+  const t = typeof value;
+  switch (t) {
+    case "boolean":
+      hash.update(value ? "T" : "F");
+      return;
+    case "string":
+      hash.update(`s${(value as string).length}:${value as string}`);
+      return;
+    case "number":
+      hash.update(`n:${Object.is(value, -0) ? "-0" : String(value)}`);
+      return;
+    case "bigint":
+      hash.update(`B:${value}`);
+      return;
+    case "symbol":
+      hash.update(`Y:${symbolId(value as symbol)}`);
+      return;
+    case "function":
+      hash.update(`f:${identityId(value as object)}`);
+      return;
+  }
+  if (seen.has(value)) {
+    hash.update(`R:${identityId(value as object)}`);
+    return;
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    hash.update("[");
+    for (let i = 0; i < value.length; i++) hashValue(hash, value[i], seen);
+    hash.update("]");
+    return;
+  }
+  if (!isPlainObject(value as object)) {
+    hash.update(`O:${identityId(value as object)}`);
+    return;
+  }
+  hash.update("{");
+  const entries = Object.entries(value as Record<string, unknown>);
+  for (const [k, v] of entries) {
+    hash.update(`k${k.length}:${k}`);
+    hashValue(hash, v, seen);
+  }
+  hash.update("}");
 }
 
 function toolsFingerprint(tools: unknown[]): string {
   const hash = createHash("sha256");
+  const seen = new Set<unknown>();
   for (const t of tools) {
-    hash.update(safeStringify(t));
+    hashValue(hash, t, seen);
     hash.update("|");
   }
   return hash.digest("hex");
