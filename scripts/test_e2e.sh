@@ -2850,7 +2850,8 @@ for protocol in anthropic openai; do
 done
 log "  Result: $KIMI_E2E_T2B_PASS passed, $KIMI_E2E_T2B_FAIL failed"
 if [ "$KIMI_E2E_T2B_FAIL" -gt 0 ]; then
-  log "  WARNING: Some thinking level + protocol combos failed."
+  log "  FAILED: $KIMI_E2E_T2B_FAIL thinking level + protocol combo(s) failed."
+  exit 1
 fi
 printf '\n'
 
