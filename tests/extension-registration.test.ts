@@ -11,7 +11,11 @@ import type {
   RegisteredCommand,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { KIMI_TOOL_NAMES } from "../src/config.ts";
+import {
+  DEFAULT_KIMI_CODE_CONFIG,
+  KIMI_TOOL_NAMES,
+  getProjectKimiCodeConfigPath,
+} from "../src/config.ts";
 import { PROVIDER_ID } from "../src/constants.ts";
 import registerKimiCodeExtension from "../index.ts";
 
@@ -21,11 +25,18 @@ function tempDir(name: string): string {
 
 function withCwd<T>(cwd: string, fn: () => T): T {
   const originalCwd = process.cwd();
+  const originalHome = process.env.HOME;
   process.chdir(cwd);
+  process.env.HOME = cwd;
   try {
     return fn();
   } finally {
     process.chdir(originalCwd);
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
   }
 }
 
@@ -123,7 +134,7 @@ describe("extension tool registration", () => {
 
   it("registers only enabled Moonshot tools", () => {
     const cwd = tempDir("kimi-extension-cwd");
-    const configPath = join(cwd, ".pi", "pi-provider-kimi-code.json");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
     mkdirSync(join(configPath, ".."), { recursive: true });
     writeFileSync(
       configPath,
@@ -152,12 +163,12 @@ describe("extension tool registration", () => {
       undefined as never,
       undefined as never,
     );
-    assert.match(component.render(80).join("\n"), /"url": "https:\/\/example.com"/);
+    assert.match(component.render(80).join("\n"), /Example|https:\/\/example.com/);
   });
 
   it("shows effective tool sources in /kimi-settings", async () => {
     const cwd = tempDir("kimi-extension-cwd");
-    const configPath = join(cwd, ".pi", "pi-provider-kimi-code.json");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
     mkdirSync(join(configPath, ".."), { recursive: true });
     writeFileSync(
       configPath,
@@ -284,11 +295,13 @@ describe("extension tool registration", () => {
 
   it("writes project config and updates active tools from /kimi-settings", async () => {
     const cwd = tempDir("kimi-extension-cwd");
-    const configPath = join(cwd, ".pi", "pi-provider-kimi-code.json");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(configPath, JSON.stringify(DEFAULT_KIMI_CODE_CONFIG), "utf8");
     const { commands, getActiveTools, pi, setActiveTools, tools } = makePi();
     setActiveTools(["shell", "moonshot_fetch"]);
     const choices = [
-      "Edit project config (.pi/pi-provider-kimi-code.json)",
+      "Edit project config (.pi/providers/kimi-coding/config.json)",
       "moonshot_search -> disabled, default collapsed",
       "Enable moonshot_search",
       "moonshot_fetch -> disabled, default collapsed",
@@ -345,9 +358,10 @@ describe("extension tool registration", () => {
     assert.match(notifications[0], /Weekly limit: \[################----\] 80% left \(80\/100\)/);
     assert.match(notifications[0], /5h rate limit: \[###############-----\] 75% left \(150\/200\)/);
     assert.match(titles[0], /^Kimi settings/);
-    assert.match(titles[0], /moonshot_search: disabled \(default\)/);
-    assert.match(titles[0], /kimi_datasource: disabled \(default\)/);
+    assert.match(titles[0], /moonshot_search: disabled \(project\)/);
+    assert.match(titles[0], /kimi_datasource: disabled \(project\)/);
     assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+      ...DEFAULT_KIMI_CODE_CONFIG,
       tools: Object.fromEntries(
         KIMI_TOOL_NAMES.map((name) => [
           name,

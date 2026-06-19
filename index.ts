@@ -232,6 +232,7 @@ function moonshotStatus(config: KimiCodeConfig): string {
 
 function toggleEnabled(config: KimiCodeConfig, toolName: KimiToolName): KimiCodeConfig {
   return {
+    ...config,
     tools: {
       ...config.tools,
       [toolName]: {
@@ -244,6 +245,7 @@ function toggleEnabled(config: KimiCodeConfig, toolName: KimiToolName): KimiCode
 
 function toggleCollapsed(config: KimiCodeConfig, toolName: KimiToolName): KimiCodeConfig {
   return {
+    ...config,
     tools: {
       ...config.tools,
       [toolName]: {
