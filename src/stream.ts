@@ -30,6 +30,12 @@ import {
   uploadKimiFile,
 } from "./payload.ts";
 
+let resolvedStore: KimiResolvedModelConfig | null = null;
+
+export function setStoreResolvedKimiConfig(config: KimiResolvedModelConfig): void {
+  resolvedStore = config;
+}
+
 // =============================================================================
 // Event stream filter: suppress Kimi "(Empty response: ...)" text blocks
 // =============================================================================
@@ -163,8 +169,7 @@ export function streamSimpleKimi(
   )?.prompt_cache_key;
   const cacheKey = (typeof cacheKeyOverride === "string" && cacheKeyOverride) || options?.sessionId;
   const cacheRetention = resolveCacheRetention(options?.cacheRetention);
-  const modelConfig = (model as Model<Api> & { resolvedConfig?: KimiResolvedModelConfig })
-    .resolvedConfig ?? {
+  const modelConfig = resolvedStore ?? {
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
     input: ["text"],
