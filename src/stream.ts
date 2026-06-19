@@ -173,7 +173,6 @@ export function streamSimpleKimi(
     thinkingKeep: null,
     generation: {},
   };
-  const thinkingKeep = modelConfig.thinkingKeep ?? undefined;
   const originalOnPayload = options?.onPayload;
   // The pi-side model id ("kimi-for-coding") is what users select via /model
   // and what gets persisted into sessions. The wire model id discovered at
@@ -181,10 +180,6 @@ export function streamSimpleKimi(
   // the model object via modifyModels and rewritten into the request payload
   // here so /v1/chat/completions and /v1/messages see the real wire id.
   const wireModelId = (model as Model<Api> & { wireModelId?: unknown }).wireModelId;
-  const supportsThinkingType = (
-    model as Model<Api> & { supportsThinkingType?: "only" | "no" | "both" }
-  ).supportsThinkingType;
-
   const buildPatchedOptions = (apiKey: string): SimpleStreamOptions => {
     const upload: Uploader | undefined = apiKey
       ? (mimeType, data) => uploadKimiFile(apiKey, mimeType, data)
@@ -206,9 +201,7 @@ export function streamSimpleKimi(
             cacheKey,
             cacheRetention,
             reasoning: options?.reasoning,
-            thinkingKeep,
             modelConfig,
-            supportsThinkingType,
           });
           if (
             typeof wireModelId === "string" &&

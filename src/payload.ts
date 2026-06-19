@@ -3,7 +3,7 @@
 // and the top-level applyKimiPayloadMutations that orchestrates them.
 
 import type { CacheRetention, ThinkingLevel } from "@earendil-works/pi-ai";
-import type { KimiResolvedModelConfig } from "./config.ts";
+import type { KimiResolvedModelConfig, ModelReasoningEntry } from "./config.ts";
 
 import { getBaseUrl } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
@@ -33,31 +33,25 @@ export interface KimiPayloadContext {
   cacheKey?: string;
   cacheRetention: CacheRetention;
   reasoning?: ThinkingLevel;
-  thinkingKeep?: string;
   modelConfig: KimiResolvedModelConfig;
-  supportsThinkingType?: "only" | "no" | "both";
 }
 
 export function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function mapThinkingLevel(
-  level?: string,
-): { effort: string | undefined; enabled: boolean } | undefined {
-  if (!level) return undefined;
-  if (level === "none" || level === "off") return { effort: undefined, enabled: false };
-  if (level === "minimal" || level === "low") return { effort: "low", enabled: true };
-  if (level === "medium") return { effort: "medium", enabled: true };
-  if (level === "high" || level === "xhigh") return { effort: "high", enabled: true };
-  return undefined;
+export function resolveReasoningForLevel(
+  level: string,
+  config: KimiResolvedModelConfig,
+): ModelReasoningEntry | undefined {
+  return config.reasoningMap[level];
 }
 
 function resolveThinkingLevel(ctx: KimiPayloadContext): ThinkingLevel | undefined {
-  if (ctx.supportsThinkingType === "no") return undefined;
-  if (ctx.supportsThinkingType === "only") {
+  if (ctx.modelConfig.supportsThinkingType === "no") return undefined;
+  if (ctx.modelConfig.supportsThinkingType === "only") {
     if (!ctx.reasoning) return "low";
-    const mapped = mapThinkingLevel(ctx.reasoning);
+    const mapped = resolveReasoningForLevel(ctx.reasoning, ctx.modelConfig);
     if (mapped && !mapped.enabled) return "low";
   }
   return ctx.reasoning;
@@ -461,9 +455,9 @@ export async function applyKimiPayloadMutations(
   //    field (which may have come from extra_body above).
   const resolvedReasoning = resolveThinkingLevel(ctx);
   if (resolvedReasoning) {
-    const mapped = mapThinkingLevel(resolvedReasoning);
+    const mapped = resolveReasoningForLevel(resolvedReasoning, ctx.modelConfig);
     if (mapped) {
-      if (mapped.effort !== undefined) {
+      if (mapped.effort !== null) {
         payload.reasoning_effort = mapped.effort;
       } else {
         delete payload.reasoning_effort;
@@ -473,8 +467,8 @@ export async function applyKimiPayloadMutations(
         ...oldThinking,
         type: mapped.enabled ? "enabled" : "disabled",
       };
-      if (mapped.enabled && ctx.thinkingKeep) {
-        (payload.thinking as JsonRecord).keep = ctx.thinkingKeep;
+      if (mapped.enabled && ctx.modelConfig.thinkingKeep) {
+        (payload.thinking as JsonRecord).keep = ctx.modelConfig.thinkingKeep;
       }
     }
   }

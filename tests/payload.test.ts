@@ -7,6 +7,7 @@ import {
   type JsonRecord,
   type KimiPayloadContext,
   resolveCacheRetention,
+  resolveReasoningForLevel,
 } from "../src/payload.ts";
 import {
   filterEmptyResponseStream,
@@ -280,7 +281,7 @@ describe("applyKimiPayloadMutations", () => {
     };
     await applyKimiPayloadMutations(
       enabledPayload,
-      baseCtx({ reasoning: "high", thinkingKeep: "all" }),
+      baseCtx({ reasoning: "high", modelConfig: { ...defaultModelConfig, thinkingKeep: "all" } }),
     );
     assert.deepEqual(enabledPayload.thinking, { type: "enabled", keep: "all" });
 
@@ -289,7 +290,10 @@ describe("applyKimiPayloadMutations", () => {
     };
     await applyKimiPayloadMutations(
       disabledPayload,
-      baseCtx({ reasoning: "none" as ThinkingLevel, thinkingKeep: "all" }),
+      baseCtx({
+        reasoning: "none" as ThinkingLevel,
+        modelConfig: { ...defaultModelConfig, thinkingKeep: "all" },
+      }),
     );
     assert.deepEqual(disabledPayload.thinking, { type: "disabled" });
     assert.equal(disabledPayload.reasoning_effort, undefined);
@@ -344,7 +348,10 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(
       payload,
-      baseCtx({ reasoning: "high", supportsThinkingType: "no" }),
+      baseCtx({
+        reasoning: "high",
+        modelConfig: { ...defaultModelConfig, supportsThinkingType: "no" },
+      }),
     );
 
     assert.equal(payload.reasoning_effort, undefined);
@@ -358,11 +365,14 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(
       payload,
-      baseCtx({ reasoning: "none" as ThinkingLevel, supportsThinkingType: "only" }),
+      baseCtx({
+        reasoning: "none" as ThinkingLevel,
+        modelConfig: { ...defaultModelConfig, supportsThinkingType: "only" },
+      }),
     );
 
     assert.equal(payload.reasoning_effort, "low");
-    assert.deepEqual(payload.thinking, { type: "enabled" });
+    assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
   });
 
   it("preserves caller reasoning when supportsThinkingType is 'only' and caller already enabled", async () => {
@@ -372,11 +382,14 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(
       payload,
-      baseCtx({ reasoning: "high", supportsThinkingType: "only" }),
+      baseCtx({
+        reasoning: "high",
+        modelConfig: { ...defaultModelConfig, supportsThinkingType: "only" },
+      }),
     );
 
     assert.equal(payload.reasoning_effort, "high");
-    assert.deepEqual(payload.thinking, { type: "enabled" });
+    assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
   });
 
   it("forces thinking enabled when supportsThinkingType is 'only' and reasoning is missing", async () => {
@@ -384,10 +397,13 @@ describe("applyKimiPayloadMutations", () => {
       messages: [{ role: "user", content: "hi" }],
     };
 
-    await applyKimiPayloadMutations(payload, baseCtx({ supportsThinkingType: "only" }));
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({ modelConfig: { ...defaultModelConfig, supportsThinkingType: "only" } }),
+    );
 
     assert.equal(payload.reasoning_effort, "low");
-    assert.deepEqual(payload.thinking, { type: "enabled" });
+    assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
   });
 
   it("behaves normally when supportsThinkingType is 'both'", async () => {
@@ -397,11 +413,39 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(
       payload,
-      baseCtx({ reasoning: "high", supportsThinkingType: "both" }),
+      baseCtx({
+        reasoning: "high",
+        modelConfig: { ...defaultModelConfig, supportsThinkingType: "both" },
+      }),
     );
 
     assert.equal(payload.reasoning_effort, "high");
-    assert.deepEqual(payload.thinking, { type: "enabled" });
+    assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
+  });
+});
+
+describe("resolveReasoningForLevel", () => {
+  it("returns mapped reasoning entries from model config", () => {
+    assert.deepEqual(resolveReasoningForLevel("none", defaultModelConfig), {
+      effort: null,
+      enabled: false,
+    });
+    assert.deepEqual(resolveReasoningForLevel("off", defaultModelConfig), {
+      effort: null,
+      enabled: false,
+    });
+    assert.deepEqual(resolveReasoningForLevel("minimal", defaultModelConfig), {
+      effort: "low",
+      enabled: true,
+    });
+    assert.deepEqual(resolveReasoningForLevel("xhigh", defaultModelConfig), {
+      effort: "high",
+      enabled: true,
+    });
+  });
+
+  it("returns undefined for unknown reasoning levels", () => {
+    assert.equal(resolveReasoningForLevel("unknown", defaultModelConfig), undefined);
   });
 });
 
