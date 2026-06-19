@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
-import { KIMI_CODE_VERSION } from "../src/constants.ts";
+import { KIMI_UPSTREAM_VERSION } from "../src/constants.ts";
 import { asciiHeaderValue, getCommonHeaders, getOsVersion } from "../src/device.ts";
 import { buildModelsUrl } from "../src/models.ts";
 
@@ -28,8 +28,8 @@ describe("getCommonHeaders", () => {
   it("uses Kimi Code-compatible identity headers", () => {
     const headers = getCommonHeaders();
     assert.equal(headers["X-Msh-Platform"], "kimi_code_cli");
-    assert.equal(headers["User-Agent"], `kimi-code-cli/${KIMI_CODE_VERSION}`);
-    assert.equal(headers["X-Msh-Version"], KIMI_CODE_VERSION);
+    assert.equal(headers["User-Agent"], `kimi-code-cli/${KIMI_UPSTREAM_VERSION}`);
+    assert.equal(headers["X-Msh-Version"], KIMI_UPSTREAM_VERSION);
   });
 });
 

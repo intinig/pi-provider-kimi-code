@@ -11,7 +11,7 @@ import { dirname } from "node:path";
 import {
   DEVICE_ID_PATH,
   KIMI_CODE_USER_AGENT,
-  KIMI_CODE_VERSION,
+  KIMI_UPSTREAM_VERSION,
   KIMI_PLATFORM,
 } from "./constants.ts";
 
@@ -156,7 +156,7 @@ export function getCommonHeaders(): Record<string, string> {
   const headers = {
     "User-Agent": KIMI_CODE_USER_AGENT,
     "X-Msh-Platform": KIMI_PLATFORM,
-    "X-Msh-Version": KIMI_CODE_VERSION,
+    "X-Msh-Version": KIMI_UPSTREAM_VERSION,
     "X-Msh-Device-Name": os.hostname(),
     "X-Msh-Device-Model": DEVICE_MODEL,
     "X-Msh-Os-Version": getOsVersion(),

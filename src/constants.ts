@@ -41,8 +41,13 @@ export function getDefaultBaseUrl(protocol: KimiWireProtocol): string {
 
 export const DEFAULT_BASE_URL = getDefaultBaseUrl(ENV_KIMI_CODE_PROTOCOL);
 
-export const KIMI_CODE_VERSION = "0.6.0";
-export const KIMI_CODE_USER_AGENT = `kimi-code-cli/${KIMI_CODE_VERSION}`;
+export const PROVIDER_VERSION = "0.6.1";
+
+// Upstream kimi-code CLI version — used in User-Agent and X-Msh-Version
+// headers to match the official client's identity. Update this when
+// syncing with https://github.com/anthropics/kimi-code.
+export const KIMI_UPSTREAM_VERSION = "0.18.0";
+export const KIMI_CODE_USER_AGENT = `kimi-code-cli/${KIMI_UPSTREAM_VERSION}`;
 export const KIMI_PLATFORM = "kimi_code_cli";
 
 export function getKimiCodeHome(): string {
