@@ -22,12 +22,14 @@ import {
   AuthStorage,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import os from "node:os";
 import { relative } from "node:path";
 
 import {
   type KimiCodeConfig,
+  type KimiCodeConfigPatch,
   KIMI_TOOL_NAMES,
   getProjectKimiCodeConfigPath,
   getGlobalKimiCodeConfigPath,
@@ -73,6 +75,7 @@ interface KimiRuntimeState {
   cwd: string;
   config: KimiCodeConfig;
   modelExtras: KimiOAuthExtras;
+  overrides?: KimiCodeConfigPatch;
 }
 
 function buildKimiTool(toolName: KimiToolName, config: KimiCodeConfig) {
@@ -109,7 +112,7 @@ function registerConfiguredMoonshotTools(
 }
 
 function reloadEffectiveKimiRuntimeConfig(state: KimiRuntimeState, cwd: string): KimiCodeConfig {
-  const config = loadKimiCodeConfig({ cwd, home: os.homedir() });
+  const config = loadKimiCodeConfig({ cwd, home: os.homedir() }, state.overrides);
   state.cwd = cwd;
   state.config = config;
   setStoreResolvedKimiConfig({
@@ -289,17 +292,26 @@ function setUploadThreshold(config: KimiCodeConfig, thresholdBytes: number): Kim
   return { ...config, uploads: { ...config.uploads, thresholdBytes } };
 }
 
+async function refreshModelExtras(state: KimiRuntimeState): Promise<void> {
+  const token = getKimiUsageToken();
+  if (!token) return;
+  const extras = await discoverKimiModelMetadata(token, state.config.protocol);
+  if (Object.keys(extras).length > 0) {
+    Object.assign(state.modelExtras, extras);
+  }
+}
+
 async function runKimiCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   state: KimiRuntimeState,
 ): Promise<void> {
   let config = applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, { updateActiveTools: true });
-  let usage = await fetchKimiUsageSummary();
+  let [usage] = await Promise.all([fetchKimiUsageSummary(), refreshModelExtras(state)]);
   ctx.ui.notify(usage);
 
   while (true) {
-    const choice = await ctx.ui.select(buildKimiMainTitle(config, ctx.cwd), [
+    const choice = await ctx.ui.select(buildKimiMainTitle(config, ctx.cwd, state.modelExtras), [
       `Edit project config (${relative(ctx.cwd, getProjectKimiCodeConfigPath(ctx.cwd))})`,
       `Edit home config (${homeRelative(getGlobalKimiCodeConfigPath(os.homedir()))})`,
       "Refresh usage",
@@ -447,11 +459,13 @@ function saveScopeKimiCodeConfig(
   }
 }
 
-function buildKimiMainTitle(config: KimiCodeConfig, cwd: string): string {
+function buildKimiMainTitle(config: KimiCodeConfig, cwd: string, extras: KimiOAuthExtras): string {
   const sources = loadKimiCodeConfigSources({ cwd, home: os.homedir() });
+  const modelName = extras.modelDisplay || "kimi-for-coding";
   return [
     `Kimi settings (provider v${KIMI_CODE_VERSION})`,
     "",
+    `Model: ${modelName}`,
     `Protocol: ${config.protocol} (${sources.protocol})`,
     `Upload threshold: ${formatByteSize(config.uploads.thresholdBytes)} (${sources.uploads.thresholdBytes})`,
     "",
@@ -557,54 +571,58 @@ function formatToolStatus(config: KimiCodeConfig, toolName: KimiToolName): strin
   return `${enabled}, ${collapsed}`;
 }
 
-export default async function (pi: ExtensionAPI) {
-  const cwd = process.cwd();
-  const config = loadKimiCodeConfig({ cwd, home: os.homedir() });
-  const baseModel = buildKimiModelFromConfig(config.model);
-  const discoveryToken = getKimiUsageToken();
-  const discovered = discoveryToken
-    ? await discoverKimiModelMetadata(discoveryToken, config.protocol)
-    : {};
-  const state: KimiRuntimeState = { cwd, config, modelExtras: discovered };
-  reloadEffectiveKimiRuntimeConfig(state, cwd);
-  const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
+export function KimiCode(overrides?: KimiCodeConfigPatch): ExtensionFactory {
+  return async (pi: ExtensionAPI) => {
+    const cwd = process.cwd();
+    const config = loadKimiCodeConfig({ cwd, home: os.homedir() }, overrides);
+    const baseModel = buildKimiModelFromConfig(config.model);
+    const discoveryToken = getKimiUsageToken();
+    const discovered = discoveryToken
+      ? await discoverKimiModelMetadata(discoveryToken, config.protocol)
+      : {};
+    const state: KimiRuntimeState = { cwd, config, modelExtras: discovered, overrides };
+    reloadEffectiveKimiRuntimeConfig(state, cwd);
+    const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
 
-  pi.registerProvider(PROVIDER_ID, {
-    baseUrl: getBaseUrl(config.protocol),
-    apiKey: "$KIMI_API_KEY",
-    api: getKimiApiType(config.protocol),
-    streamSimple: streamSimpleKimi,
+    pi.registerProvider(PROVIDER_ID, {
+      baseUrl: getBaseUrl(config.protocol),
+      apiKey: "$KIMI_API_KEY",
+      api: getKimiApiType(config.protocol),
+      streamSimple: streamSimpleKimi,
 
-    models: [model],
+      models: [model],
 
-    oauth: {
-      name: "Kimi Code (OAuth)",
-      login: loginKimiCode,
-      refreshToken: refreshKimiCodeToken,
-      getApiKey: (cred) => cred.access,
-      // Reflect server-side model identity on the registered model after login
-      // / refresh. We never rewrite the model id (pi-side `/model` selections
-      // and persisted sessions reference it); only the human-facing name, the
-      // context window, and an out-of-band `wireModelId` carried into the
-      // request payload by streamSimpleKimi.
-      modifyModels: (models, cred) => {
-        const extras = cred as KimiOAuthCredentials;
-        state.modelExtras = extras;
-        reloadEffectiveKimiRuntimeConfig(state, state.cwd);
-        return models.map((model) => {
-          if (model.id !== "kimi-for-coding") return model;
-          return applyKimiOAuthExtrasToModel(model, extras);
-        });
+      oauth: {
+        name: "Kimi Code (OAuth)",
+        login: loginKimiCode,
+        refreshToken: refreshKimiCodeToken,
+        getApiKey: (cred) => cred.access,
+        // Reflect server-side model identity on the registered model after login
+        // / refresh. We never rewrite the model id (pi-side `/model` selections
+        // and persisted sessions reference it); only the human-facing name, the
+        // context window, and an out-of-band `wireModelId` carried into the
+        // request payload by streamSimpleKimi.
+        modifyModels: (models, cred) => {
+          const extras = cred as KimiOAuthCredentials;
+          state.modelExtras = extras;
+          reloadEffectiveKimiRuntimeConfig(state, state.cwd);
+          return models.map((model) => {
+            if (model.id !== "kimi-for-coding") return model;
+            return applyKimiOAuthExtrasToModel(model, extras);
+          });
+        },
       },
-    },
-  });
+    });
 
-  registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
+    registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
 
-  pi.registerCommand("kimi-settings", {
-    description: "Show Kimi usage and configure optional Kimi tools",
-    handler: async (_args, ctx) => {
-      await runKimiCommand(pi, ctx, state);
-    },
-  });
+    pi.registerCommand("kimi-settings", {
+      description: "Show Kimi usage and configure optional Kimi tools",
+      handler: async (_args, ctx) => {
+        await runKimiCommand(pi, ctx, state);
+      },
+    });
+  };
 }
+
+export default KimiCode();

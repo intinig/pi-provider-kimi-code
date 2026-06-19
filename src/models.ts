@@ -42,13 +42,28 @@ function mergeInputModalities(
   return (["text", "image", "video"] as const).filter((modality) => next.has(modality));
 }
 
+// Pricing per million tokens in USD (CNY converted at ~7.25).
+// Source: https://platform.kimi.com/docs/pricing/chat-k27-code
+const COST_STANDARD = { input: 0.897, output: 3.724, cacheRead: 0.179, cacheWrite: 0.897 };
+const COST_HIGH_SPEED = { input: 1.793, output: 7.448, cacheRead: 0.359, cacheWrite: 1.793 };
+
+function resolveModelCost(modelDisplay: string | undefined): {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+} {
+  if (modelDisplay && /high\s*speed/i.test(modelDisplay)) return COST_HIGH_SPEED;
+  return COST_STANDARD;
+}
+
 export function buildKimiModelFromConfig(config: ModelConfig): Model<Api> {
   return {
     id: "kimi-for-coding",
     name: "Kimi for Coding",
     reasoning: config.reasoning,
     input: [...config.input] as unknown as ("text" | "image" | "video")[],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: { ...COST_STANDARD },
     contextWindow: config.contextWindow,
     maxTokens: config.maxTokens,
   } as Model<Api>;
@@ -155,6 +170,7 @@ export function applyKimiOAuthExtrasToModel(
     { ...model };
   if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
     next.name = extras.modelDisplay;
+    next.cost = resolveModelCost(extras.modelDisplay);
   }
   if (typeof extras.contextLength === "number" && extras.contextLength > 0) {
     next.contextWindow = extras.contextLength;

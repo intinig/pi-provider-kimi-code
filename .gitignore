@@ -4,3 +4,4 @@ node_modules/
 storage/
 .doc-review/
 pi-session-*.html
+.pi
