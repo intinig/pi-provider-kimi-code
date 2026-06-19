@@ -289,17 +289,26 @@ function setUploadThreshold(config: KimiCodeConfig, thresholdBytes: number): Kim
   return { ...config, uploads: { ...config.uploads, thresholdBytes } };
 }
 
+async function refreshModelExtras(state: KimiRuntimeState): Promise<void> {
+  const token = getKimiUsageToken();
+  if (!token) return;
+  const extras = await discoverKimiModelMetadata(token, state.config.protocol);
+  if (extras.modelDisplay) {
+    Object.assign(state.modelExtras, extras);
+  }
+}
+
 async function runKimiCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   state: KimiRuntimeState,
 ): Promise<void> {
   let config = applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, { updateActiveTools: true });
-  let usage = await fetchKimiUsageSummary();
+  let [usage] = await Promise.all([fetchKimiUsageSummary(), refreshModelExtras(state)]);
   ctx.ui.notify(usage);
 
   while (true) {
-    const choice = await ctx.ui.select(buildKimiMainTitle(config, ctx.cwd), [
+    const choice = await ctx.ui.select(buildKimiMainTitle(config, ctx.cwd, state.modelExtras), [
       `Edit project config (${relative(ctx.cwd, getProjectKimiCodeConfigPath(ctx.cwd))})`,
       `Edit home config (${homeRelative(getGlobalKimiCodeConfigPath(os.homedir()))})`,
       "Refresh usage",
@@ -447,11 +456,17 @@ function saveScopeKimiCodeConfig(
   }
 }
 
-function buildKimiMainTitle(config: KimiCodeConfig, cwd: string): string {
+function buildKimiMainTitle(
+  config: KimiCodeConfig,
+  cwd: string,
+  extras: KimiOAuthExtras,
+): string {
   const sources = loadKimiCodeConfigSources({ cwd, home: os.homedir() });
+  const modelName = extras.modelDisplay || "kimi-for-coding";
   return [
     `Kimi settings (provider v${KIMI_CODE_VERSION})`,
     "",
+    `Model: ${modelName}`,
     `Protocol: ${config.protocol} (${sources.protocol})`,
     `Upload threshold: ${formatByteSize(config.uploads.thresholdBytes)} (${sources.uploads.thresholdBytes})`,
     "",
