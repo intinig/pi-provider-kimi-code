@@ -4,7 +4,7 @@
 import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
 import type { KimiResolvedModelConfig, ModelConfig } from "./config.ts";
 
-import { getBaseUrl } from "./constants.ts";
+import { type KimiWireProtocol, getBaseUrl } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
 
 export interface KimiOAuthExtras {
@@ -73,14 +73,17 @@ export function buildModelsUrl(baseUrl: string): string {
   return base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
 }
 
-function getModelsUrl(): string {
-  return buildModelsUrl(getBaseUrl());
+function getModelsUrl(protocol?: KimiWireProtocol): string {
+  return buildModelsUrl(getBaseUrl(protocol));
 }
 
-export async function discoverKimiModelMetadata(accessToken: string): Promise<KimiOAuthExtras> {
+export async function discoverKimiModelMetadata(
+  accessToken: string,
+  protocol?: KimiWireProtocol,
+): Promise<KimiOAuthExtras> {
   if (!accessToken) return {};
   try {
-    const response = await fetch(getModelsUrl(), {
+    const response = await fetch(getModelsUrl(protocol), {
       headers: {
         ...getCommonHeaders(),
         Authorization: `Bearer ${accessToken}`,

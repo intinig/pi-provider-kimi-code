@@ -293,6 +293,74 @@ describe("extension tool registration", () => {
     assert.match(notifications[0], /Weekly limit: \[####################\] 99% left \(99\/100\)/);
   });
 
+  it("writes protocol and upload threshold from /kimi-settings", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(configPath, JSON.stringify(DEFAULT_KIMI_CODE_CONFIG), "utf8");
+    const { commands, pi } = makePi();
+    const choices = [
+      "Edit project config (.pi/providers/kimi-coding/config.json)",
+      "Protocol -> openai",
+      "Use anthropic protocol",
+      "Upload threshold -> 1 MiB",
+      "Back",
+      "Done",
+    ];
+    const inputs = ["2 MiB"];
+    const titles: string[] = [];
+    const notifications: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalKimiApiKey = process.env.KIMI_API_KEY;
+    process.env.KIMI_API_KEY = "test-key";
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ usage: { limit: 100, remaining: 100 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    try {
+      await withCwd(cwd, () => registerKimiCodeExtension(pi));
+      const kimiCommand = commands.get("kimi-settings");
+      assert.ok(kimiCommand);
+
+      await kimiCommand.handler("", {
+        cwd,
+        ui: {
+          select: async (title: string) => {
+            titles.push(title);
+            return choices.shift();
+          },
+          input: async () => inputs.shift(),
+          notify: (message: string) => {
+            notifications.push(message);
+          },
+        },
+      } as unknown as ExtensionCommandContext);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKimiApiKey === undefined) {
+        delete process.env.KIMI_API_KEY;
+      } else {
+        process.env.KIMI_API_KEY = originalKimiApiKey;
+      }
+    }
+
+    assert.match(titles[0], /Protocol: openai \(project\)/);
+    assert.match(titles.at(-1) ?? "", /Protocol: anthropic \(project\)/);
+    assert.match(titles.at(-1) ?? "", /Upload threshold: 2 MiB \(project\)/);
+    assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+      ...DEFAULT_KIMI_CODE_CONFIG,
+      uploads: { thresholdBytes: 2097152 },
+      protocol: "anthropic",
+    });
+    assert.deepEqual(notifications, [
+      "Weekly limit: [####################] 100% left (100/100)",
+      "Saved protocol config",
+      "Saved upload threshold config",
+    ]);
+  });
+
   it("writes project config and updates active tools from /kimi-settings", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const configPath = getProjectKimiCodeConfigPath(cwd);

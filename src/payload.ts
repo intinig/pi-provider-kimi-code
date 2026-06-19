@@ -92,10 +92,12 @@ export async function uploadKimiFile(
   apiKey: string,
   mimeType: string,
   data: string,
+  thresholdBytes?: number,
 ): Promise<string | null> {
   const buffer = Buffer.from(data, "base64");
   if (!mimeType.startsWith("image/")) return null;
-  const threshold = parseInlineUploadThreshold(process.env.KIMI_CODE_UPLOAD_THRESHOLD_BYTES);
+  const threshold =
+    thresholdBytes ?? parseInlineUploadThreshold(process.env.KIMI_CODE_UPLOAD_THRESHOLD_BYTES);
   if (buffer.length <= threshold) return null;
 
   const filename = getUploadFilename(mimeType);

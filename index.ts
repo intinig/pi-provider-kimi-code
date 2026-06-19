@@ -39,7 +39,7 @@ import {
   saveProjectKimiCodeConfig,
   type KimiToolName,
 } from "./src/config.ts";
-import { KIMI_API_TYPE, KIMI_CODE_VERSION, PROVIDER_ID, getBaseUrl } from "./src/constants.ts";
+import { KIMI_CODE_VERSION, PROVIDER_ID, getBaseUrl, getKimiApiType } from "./src/constants.ts";
 import { getCommonHeaders } from "./src/device.ts";
 import {
   type KimiOAuthCredentials,
@@ -112,7 +112,11 @@ function reloadEffectiveKimiRuntimeConfig(state: KimiRuntimeState, cwd: string):
   const config = loadKimiCodeConfig({ cwd, home: os.homedir() });
   state.cwd = cwd;
   state.config = config;
-  setStoreResolvedKimiConfig(resolveKimiModelConfig(config.model, state.modelExtras));
+  setStoreResolvedKimiConfig({
+    model: resolveKimiModelConfig(config.model, state.modelExtras),
+    protocol: config.protocol,
+    uploads: config.uploads,
+  });
   return config;
 }
 
@@ -277,6 +281,14 @@ function toggleCollapsed(config: KimiCodeConfig, toolName: KimiToolName): KimiCo
   };
 }
 
+function setProtocol(config: KimiCodeConfig, protocol: KimiCodeConfig["protocol"]): KimiCodeConfig {
+  return { ...config, protocol };
+}
+
+function setUploadThreshold(config: KimiCodeConfig, thresholdBytes: number): KimiCodeConfig {
+  return { ...config, uploads: { ...config.uploads, thresholdBytes } };
+}
+
 async function runKimiCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
@@ -317,7 +329,7 @@ async function editConfigScope(
   let current = loadScopeKimiCodeConfig(scope, ctx.cwd);
   while (true) {
     const items = KIMI_TOOL_NAMES.map((name) => toolMenuItem(current, name));
-    items.push("Back");
+    items.push(protocolMenuItem(current), uploadThresholdMenuItem(current), "Back");
     const choice = await ctx.ui.select(buildConfigScopeTitle(scope, current, ctx.cwd), items);
     if (!choice || choice === "Back") {
       return loadKimiCodeConfig({ cwd: ctx.cwd, home: os.homedir() });
@@ -325,8 +337,55 @@ async function editConfigScope(
     const toolName = KIMI_TOOL_NAMES.find((name) => choice.startsWith(name));
     if (toolName) {
       current = await editMoonshotTool(pi, ctx, state, scope, current, toolName);
+    } else if (choice.startsWith("Protocol")) {
+      current = await editProtocol(pi, ctx, state, scope, current);
+    } else if (choice.startsWith("Upload threshold")) {
+      current = await editUploadThreshold(pi, ctx, state, scope, current);
     }
   }
+}
+
+async function editProtocol(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  state: KimiRuntimeState,
+  scope: KimiConfigScope,
+  config: KimiCodeConfig,
+): Promise<KimiCodeConfig> {
+  const choice = await ctx.ui.select(`Edit protocol\n\n${formatProtocolStatus(config)}`, [
+    "Use openai protocol",
+    "Use anthropic protocol",
+    "Back",
+  ]);
+  if (!choice || choice === "Back") return config;
+  const protocol = choice.includes("anthropic") ? "anthropic" : "openai";
+  const current = setProtocol(config, protocol);
+  saveAndApplyKimiCodeConfig(pi, ctx, state, scope, current);
+  ctx.ui.notify("Saved protocol config", "info");
+  return current;
+}
+
+async function editUploadThreshold(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  state: KimiRuntimeState,
+  scope: KimiConfigScope,
+  config: KimiCodeConfig,
+): Promise<KimiCodeConfig> {
+  const input = await ctx.ui.input(
+    "Edit upload threshold\n\nExamples: 512 KiB, 2 MiB, 1.5 MB. Plain numbers are MiB.",
+    formatByteSize(config.uploads.thresholdBytes),
+  );
+  if (input === undefined) return config;
+  const thresholdBytes = parseByteSizeInput(input);
+  if (thresholdBytes === undefined || thresholdBytes <= 0) {
+    ctx.ui.notify("Upload threshold must be a positive size, for example 2 MiB", "error");
+    return config;
+  }
+  const current = setUploadThreshold(config, thresholdBytes);
+  saveAndApplyKimiCodeConfig(pi, ctx, state, scope, current);
+  ctx.ui.notify("Saved upload threshold config", "info");
+  return current;
 }
 
 async function editMoonshotTool(
@@ -354,11 +413,21 @@ async function editMoonshotTool(
     } else if (choice.endsWith("previews by default")) {
       current = toggleCollapsed(current, toolName);
     }
-    saveScopeKimiCodeConfig(scope, ctx.cwd, current);
-    applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, { updateActiveTools: true });
+    saveAndApplyKimiCodeConfig(pi, ctx, state, scope, current);
     ctx.ui.notify(`Saved ${toolName} config`, "info");
     return current;
   }
+}
+
+function saveAndApplyKimiCodeConfig(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  state: KimiRuntimeState,
+  scope: KimiConfigScope,
+  config: KimiCodeConfig,
+): void {
+  saveScopeKimiCodeConfig(scope, ctx.cwd, config);
+  applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, { updateActiveTools: true });
 }
 
 function loadScopeKimiCodeConfig(scope: KimiConfigScope, cwd: string): KimiCodeConfig {
@@ -383,6 +452,9 @@ function buildKimiMainTitle(config: KimiCodeConfig, cwd: string): string {
   return [
     `Kimi settings (provider v${KIMI_CODE_VERSION})`,
     "",
+    `Protocol: ${config.protocol} (${sources.protocol})`,
+    `Upload threshold: ${formatByteSize(config.uploads.thresholdBytes)} (${sources.uploads.thresholdBytes})`,
+    "",
     "Effective tools:",
     ...KIMI_TOOL_NAMES.map((toolName) => {
       const enabled = config.tools[toolName].enabled ? "enabled" : "disabled";
@@ -400,7 +472,15 @@ function buildConfigScopeTitle(
     scope === "project"
       ? relative(cwd, getProjectKimiCodeConfigPath(cwd))
       : homeRelative(getGlobalKimiCodeConfigPath(os.homedir()));
-  return [`Edit ${scope} config`, `File: ${path}`, "", moonshotStatus(config)].join("\n");
+  return [
+    `Edit ${scope} config`,
+    `File: ${path}`,
+    "",
+    formatProtocolStatus(config),
+    formatUploadThresholdStatus(config),
+    "",
+    moonshotStatus(config),
+  ].join("\n");
 }
 
 function homeRelative(filePath: string): string {
@@ -410,6 +490,64 @@ function homeRelative(filePath: string): string {
 
 function toolMenuItem(config: KimiCodeConfig, toolName: KimiToolName): string {
   return `${toolName} -> ${formatToolStatus(config, toolName)}`;
+}
+
+function protocolMenuItem(config: KimiCodeConfig): string {
+  return `Protocol -> ${config.protocol}`;
+}
+
+function uploadThresholdMenuItem(config: KimiCodeConfig): string {
+  return `Upload threshold -> ${formatByteSize(config.uploads.thresholdBytes)}`;
+}
+
+function formatByteSize(bytes: number): string {
+  const units = [
+    { suffix: "GiB", size: 1024 ** 3 },
+    { suffix: "MiB", size: 1024 ** 2 },
+    { suffix: "KiB", size: 1024 },
+  ];
+  for (const unit of units) {
+    if (bytes >= unit.size && bytes % unit.size === 0) {
+      return `${bytes / unit.size} ${unit.suffix}`;
+    }
+  }
+  for (const unit of units) {
+    if (bytes >= unit.size) {
+      return `${(bytes / unit.size).toFixed(2).replace(/\.00$/, "")} ${unit.suffix}`;
+    }
+  }
+  return `${bytes} B`;
+}
+
+function parseByteSizeInput(input: string): number | undefined {
+  const match = input.trim().match(/^(\d+(?:\.\d+)?)\s*(b|bytes?|kib|kb|mib|mb|gib|gb)?$/i);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  const unit = (match[2] ?? "mib").toLowerCase();
+  const multipliers: Record<string, number> = {
+    b: 1,
+    byte: 1,
+    bytes: 1,
+    kib: 1024,
+    kb: 1000,
+    mib: 1024 ** 2,
+    mb: 1000 ** 2,
+    gib: 1024 ** 3,
+    gb: 1000 ** 3,
+  };
+  const multiplier = multipliers[unit];
+  if (!multiplier) return undefined;
+  const bytes = Math.round(value * multiplier);
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : undefined;
+}
+
+function formatProtocolStatus(config: KimiCodeConfig): string {
+  return `protocol: ${config.protocol}`;
+}
+
+function formatUploadThresholdStatus(config: KimiCodeConfig): string {
+  return `upload threshold: ${formatByteSize(config.uploads.thresholdBytes)}`;
 }
 
 function formatToolStatus(config: KimiCodeConfig, toolName: KimiToolName): string {
@@ -424,15 +562,17 @@ export default async function (pi: ExtensionAPI) {
   const config = loadKimiCodeConfig({ cwd, home: os.homedir() });
   const baseModel = buildKimiModelFromConfig(config.model);
   const discoveryToken = getKimiUsageToken();
-  const discovered = discoveryToken ? await discoverKimiModelMetadata(discoveryToken) : {};
+  const discovered = discoveryToken
+    ? await discoverKimiModelMetadata(discoveryToken, config.protocol)
+    : {};
   const state: KimiRuntimeState = { cwd, config, modelExtras: discovered };
   reloadEffectiveKimiRuntimeConfig(state, cwd);
   const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
 
   pi.registerProvider(PROVIDER_ID, {
-    baseUrl: getBaseUrl(),
+    baseUrl: getBaseUrl(config.protocol),
     apiKey: "$KIMI_API_KEY",
-    api: KIMI_API_TYPE,
+    api: getKimiApiType(config.protocol),
     streamSimple: streamSimpleKimi,
 
     models: [model],
