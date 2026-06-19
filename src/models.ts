@@ -1,8 +1,8 @@
 // Model identity: discovery against the server's /v1/models endpoint, plus the
-// extras-merging helpers used by both the OAuth modifyModels hook and the
-// `KIMI_MODEL_*` env-override path.
+// extras-merging helpers used by both registration and the OAuth modifyModels hook.
 
 import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
+import type { KimiResolvedModelConfig, ModelConfig } from "./config.ts";
 
 import { getBaseUrl } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
@@ -13,10 +13,45 @@ export interface KimiOAuthExtras {
   contextLength?: number;
   supportsReasoning?: boolean;
   supportsImageIn?: boolean;
+  supportsVideoIn?: boolean;
   supportsThinkingType?: "only" | "no" | "both";
 }
 
 export type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
+
+export function buildKimiModelFromConfig(config: ModelConfig): Model<Api> {
+  return {
+    id: "kimi-for-coding",
+    name: "Kimi for Coding",
+    reasoning: config.reasoning,
+    input: [...config.input] as unknown as ("text" | "image" | "video")[],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: config.contextWindow,
+    maxTokens: config.maxTokens,
+  } as Model<Api>;
+}
+
+export function resolveKimiModelConfig(
+  config: ModelConfig,
+  extras: Partial<KimiOAuthExtras>,
+): KimiResolvedModelConfig {
+  const resolved: KimiResolvedModelConfig = { ...config, input: [...config.input] };
+  if (typeof extras.contextLength === "number" && extras.contextLength > 0) {
+    resolved.contextWindow = extras.contextLength;
+  }
+  if (typeof extras.supportsThinkingType === "string") {
+    resolved.supportsThinkingType = extras.supportsThinkingType;
+    resolved.reasoning = extras.supportsThinkingType !== "no";
+  } else if (typeof extras.supportsReasoning === "boolean") {
+    resolved.reasoning = extras.supportsReasoning;
+  }
+  if (typeof extras.supportsImageIn === "boolean" || typeof extras.supportsVideoIn === "boolean") {
+    resolved.input = ["text"];
+    if (extras.supportsImageIn) resolved.input.push("image");
+    if (extras.supportsVideoIn) resolved.input.push("video");
+  }
+  return resolved;
+}
 
 interface KimiServerModel {
   id?: unknown;
@@ -24,6 +59,7 @@ interface KimiServerModel {
   context_length?: unknown;
   supports_reasoning?: unknown;
   supports_image_in?: unknown;
+  supports_video_in?: unknown;
   supports_thinking_type?: unknown;
 }
 
@@ -54,8 +90,7 @@ export async function discoverKimiModelMetadata(accessToken: string): Promise<Ki
     if (!response.ok) return {};
     const json = (await response.json()) as { data?: unknown };
     const list = Array.isArray(json.data) ? (json.data as KimiServerModel[]) : [];
-    const preferred =
-      list.find((m) => typeof m.id === "string" && m.id === "kimi-for-coding") ?? list[0];
+    const preferred = list.find((m) => typeof m.id === "string" && m.id === "kimi-for-coding");
     if (!preferred || typeof preferred.id !== "string") return {};
     const extras: KimiOAuthExtras = { wireModelId: preferred.id };
     if (typeof preferred.display_name === "string") extras.modelDisplay = preferred.display_name;
@@ -70,6 +105,9 @@ export async function discoverKimiModelMetadata(accessToken: string): Promise<Ki
     }
     if (typeof preferred.supports_image_in === "boolean") {
       extras.supportsImageIn = preferred.supports_image_in;
+    }
+    if (typeof preferred.supports_video_in === "boolean") {
+      extras.supportsVideoIn = preferred.supports_video_in;
     }
     return extras;
   } catch {
@@ -99,50 +137,11 @@ export function applyKimiOAuthExtrasToModel(
     next.reasoning = extras.supportsReasoning;
     next.supportsThinkingType = undefined;
   }
-  if (typeof extras.supportsImageIn === "boolean") {
+  if (typeof extras.supportsImageIn === "boolean" || typeof extras.supportsVideoIn === "boolean") {
     const input = ["text"];
     if (extras.supportsImageIn) input.push("image");
+    if (extras.supportsVideoIn) input.push("video");
     (next as unknown as { input: string[] }).input = input;
   }
   return next;
-}
-
-function parseKimiModelCapabilities(value: string | undefined): KimiOAuthExtras | null {
-  if (!value) return null;
-  const caps = new Set(
-    value
-      .split(",")
-      .map((cap) => cap.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  return {
-    supportsThinkingType: caps.has("always_thinking")
-      ? "only"
-      : caps.has("thinking")
-        ? "both"
-        : "no",
-    supportsImageIn: caps.has("image_in"),
-  };
-}
-
-export function applyKimiEnvOverridesToModel(model: Model<Api>): Model<Api> {
-  const extras: KimiOAuthExtras = {};
-  const modelName = process.env.KIMI_MODEL_NAME?.trim();
-  if (modelName) {
-    extras.wireModelId = modelName;
-    extras.modelDisplay = modelName;
-  }
-
-  const maxContextSize = process.env.KIMI_MODEL_MAX_CONTEXT_SIZE?.trim();
-  if (maxContextSize) {
-    const parsed = parseInt(maxContextSize, 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      extras.contextLength = parsed;
-    }
-  }
-
-  const capabilities = parseKimiModelCapabilities(process.env.KIMI_MODEL_CAPABILITIES);
-  if (capabilities) Object.assign(extras, capabilities);
-
-  return applyKimiOAuthExtrasToModel(model, extras);
 }

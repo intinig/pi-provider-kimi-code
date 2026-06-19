@@ -18,7 +18,6 @@
  *   src/stream.ts     — empty-response filter + streamSimpleKimi orchestrator
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   AuthStorage,
   type ExtensionAPI,
@@ -40,18 +39,14 @@ import {
   saveProjectKimiCodeConfig,
   type KimiToolName,
 } from "./src/config.ts";
-import {
-  DEFAULT_KIMI_MODEL_INPUT,
-  KIMI_API_TYPE,
-  KIMI_CODE_VERSION,
-  PROVIDER_ID,
-  getBaseUrl,
-} from "./src/constants.ts";
+import { KIMI_API_TYPE, KIMI_CODE_VERSION, PROVIDER_ID, getBaseUrl } from "./src/constants.ts";
 import { getCommonHeaders } from "./src/device.ts";
 import {
   type KimiOAuthCredentials,
-  applyKimiEnvOverridesToModel,
+  buildKimiModelFromConfig,
   applyKimiOAuthExtrasToModel,
+  discoverKimiModelMetadata,
+  resolveKimiModelConfig,
 } from "./src/models.ts";
 import { loginKimiCode, refreshKimiAuthToken, refreshKimiCodeToken } from "./src/oauth.ts";
 import { streamSimpleKimi } from "./src/stream.ts";
@@ -393,8 +388,13 @@ function formatToolStatus(config: KimiCodeConfig, toolName: KimiToolName): strin
   return `${enabled}, ${collapsed}`;
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
   const config = loadKimiCodeConfig({ cwd: process.cwd(), home: os.homedir() });
+  const baseModel = buildKimiModelFromConfig(config.model);
+  const discoveryToken = getKimiUsageToken();
+  const discovered = discoveryToken ? await discoverKimiModelMetadata(discoveryToken) : {};
+  const resolvedConfig = resolveKimiModelConfig(config.model, discovered);
+  const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
 
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: getBaseUrl(),
@@ -402,17 +402,7 @@ export default function (pi: ExtensionAPI) {
     api: KIMI_API_TYPE,
     streamSimple: streamSimpleKimi,
 
-    models: [
-      applyKimiEnvOverridesToModel({
-        id: "kimi-for-coding",
-        name: "Kimi for Coding",
-        reasoning: true,
-        input: [...DEFAULT_KIMI_MODEL_INPUT] as unknown as ("text" | "image")[],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 262144,
-        maxTokens: 32000,
-      } as Model<Api>),
-    ],
+    models: [model],
 
     oauth: {
       name: "Kimi Code (OAuth)",
@@ -426,9 +416,10 @@ export default function (pi: ExtensionAPI) {
       // request payload by streamSimpleKimi.
       modifyModels: (models, cred) => {
         const extras = cred as KimiOAuthCredentials;
+        Object.assign(resolvedConfig, resolveKimiModelConfig(config.model, extras));
         return models.map((model) => {
           if (model.id !== "kimi-for-coding") return model;
-          return applyKimiEnvOverridesToModel(applyKimiOAuthExtrasToModel(model, extras));
+          return applyKimiOAuthExtrasToModel(model, extras);
         });
       },
     },
