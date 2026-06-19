@@ -43,6 +43,7 @@ import { KIMI_API_TYPE, KIMI_CODE_VERSION, PROVIDER_ID, getBaseUrl } from "./src
 import { getCommonHeaders } from "./src/device.ts";
 import {
   type KimiOAuthCredentials,
+  type KimiOAuthExtras,
   buildKimiModelFromConfig,
   applyKimiOAuthExtrasToModel,
   discoverKimiModelMetadata,
@@ -66,6 +67,12 @@ interface UsageRow {
   label: string;
   used: number;
   limit: number;
+}
+
+interface KimiRuntimeState {
+  cwd: string;
+  config: KimiCodeConfig;
+  modelExtras: KimiOAuthExtras;
 }
 
 function buildKimiTool(toolName: KimiToolName, config: KimiCodeConfig) {
@@ -99,6 +106,25 @@ function registerConfiguredMoonshotTools(
     }
   }
   pi.setActiveTools([...activeTools]);
+}
+
+function reloadEffectiveKimiRuntimeConfig(state: KimiRuntimeState, cwd: string): KimiCodeConfig {
+  const config = loadKimiCodeConfig({ cwd, home: os.homedir() });
+  state.cwd = cwd;
+  state.config = config;
+  setStoreResolvedKimiConfig(resolveKimiModelConfig(config.model, state.modelExtras));
+  return config;
+}
+
+function applyEffectiveKimiRuntimeConfig(
+  pi: ExtensionAPI,
+  state: KimiRuntimeState,
+  cwd: string,
+  options: { updateActiveTools: boolean },
+): KimiCodeConfig {
+  const config = reloadEffectiveKimiRuntimeConfig(state, cwd);
+  registerConfiguredMoonshotTools(pi, config, options);
+  return config;
 }
 
 function getKimiUsageToken(): string | null {
@@ -251,8 +277,12 @@ function toggleCollapsed(config: KimiCodeConfig, toolName: KimiToolName): KimiCo
   };
 }
 
-async function runKimiCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
-  let config = loadKimiCodeConfig({ cwd: ctx.cwd, home: os.homedir() });
+async function runKimiCommand(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  state: KimiRuntimeState,
+): Promise<void> {
+  let config = applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, { updateActiveTools: true });
   let usage = await fetchKimiUsageSummary();
   ctx.ui.notify(usage);
 
@@ -271,9 +301,9 @@ async function runKimiCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): P
       continue;
     }
     if (choice.startsWith("Edit project config")) {
-      config = await editConfigScope(pi, ctx, "project");
+      config = await editConfigScope(pi, ctx, state, "project");
     } else if (choice.startsWith("Edit home config")) {
-      config = await editConfigScope(pi, ctx, "home");
+      config = await editConfigScope(pi, ctx, state, "home");
     }
   }
 }
@@ -281,6 +311,7 @@ async function runKimiCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): P
 async function editConfigScope(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
+  state: KimiRuntimeState,
   scope: KimiConfigScope,
 ): Promise<KimiCodeConfig> {
   let current = loadScopeKimiCodeConfig(scope, ctx.cwd);
@@ -293,7 +324,7 @@ async function editConfigScope(
     }
     const toolName = KIMI_TOOL_NAMES.find((name) => choice.startsWith(name));
     if (toolName) {
-      current = await editMoonshotTool(pi, ctx, scope, current, toolName);
+      current = await editMoonshotTool(pi, ctx, state, scope, current, toolName);
     }
   }
 }
@@ -301,6 +332,7 @@ async function editConfigScope(
 async function editMoonshotTool(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
+  state: KimiRuntimeState,
   scope: KimiConfigScope,
   config: KimiCodeConfig,
   toolName: KimiToolName,
@@ -323,8 +355,7 @@ async function editMoonshotTool(
       current = toggleCollapsed(current, toolName);
     }
     saveScopeKimiCodeConfig(scope, ctx.cwd, current);
-    const effective = loadKimiCodeConfig({ cwd: ctx.cwd, home: os.homedir() });
-    registerConfiguredMoonshotTools(pi, effective, { updateActiveTools: true });
+    applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, { updateActiveTools: true });
     ctx.ui.notify(`Saved ${toolName} config`, "info");
     return current;
   }
@@ -389,11 +420,13 @@ function formatToolStatus(config: KimiCodeConfig, toolName: KimiToolName): strin
 }
 
 export default async function (pi: ExtensionAPI) {
-  const config = loadKimiCodeConfig({ cwd: process.cwd(), home: os.homedir() });
+  const cwd = process.cwd();
+  const config = loadKimiCodeConfig({ cwd, home: os.homedir() });
   const baseModel = buildKimiModelFromConfig(config.model);
   const discoveryToken = getKimiUsageToken();
   const discovered = discoveryToken ? await discoverKimiModelMetadata(discoveryToken) : {};
-  setStoreResolvedKimiConfig(resolveKimiModelConfig(config.model, discovered));
+  const state: KimiRuntimeState = { cwd, config, modelExtras: discovered };
+  reloadEffectiveKimiRuntimeConfig(state, cwd);
   const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
 
   pi.registerProvider(PROVIDER_ID, {
@@ -416,7 +449,8 @@ export default async function (pi: ExtensionAPI) {
       // request payload by streamSimpleKimi.
       modifyModels: (models, cred) => {
         const extras = cred as KimiOAuthCredentials;
-        setStoreResolvedKimiConfig(resolveKimiModelConfig(config.model, extras));
+        state.modelExtras = extras;
+        reloadEffectiveKimiRuntimeConfig(state, state.cwd);
         return models.map((model) => {
           if (model.id !== "kimi-for-coding") return model;
           return applyKimiOAuthExtrasToModel(model, extras);
@@ -425,12 +459,12 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
-  registerConfiguredMoonshotTools(pi, config, { updateActiveTools: false });
+  registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
 
   pi.registerCommand("kimi-settings", {
     description: "Show Kimi usage and configure optional Kimi tools",
     handler: async (_args, ctx) => {
-      await runKimiCommand(pi, ctx);
+      await runKimiCommand(pi, ctx, state);
     },
   });
 }
