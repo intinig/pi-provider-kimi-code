@@ -474,4 +474,21 @@ export async function applyKimiPayloadMutations(
       }
     }
   }
+
+  // 7. K2.7 Code API constraints: the server rejects non-default values for
+  //    temperature (must be 1.0) and top_p (must be 0.95), and tool_choice
+  //    "required" / function-specific when thinking is enabled (always-on).
+  if (payload.temperature !== undefined && payload.temperature !== 1) {
+    delete payload.temperature;
+  }
+  if (payload.top_p !== undefined && payload.top_p !== 0.95) {
+    delete payload.top_p;
+  }
+  if (
+    payload.tool_choice !== undefined &&
+    payload.tool_choice !== "auto" &&
+    payload.tool_choice !== "none"
+  ) {
+    payload.tool_choice = "auto";
+  }
 }
