@@ -167,10 +167,11 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Update package.json version
+      - name: Update package.json and constants version
         run: |
           npm version '${{ steps.version.outputs.version }}' --no-git-tag-version
-          git add package.json
+          sed -i 's/^export const PROVIDER_VERSION = ".*";$/export const PROVIDER_VERSION = "${{ steps.version.outputs.version }}";/' src/constants.ts
+          git add package.json src/constants.ts
           git commit -m "chore: release ${{ steps.version.outputs.tag }}"
           git push origin HEAD:${{ env.SOURCE_REF }}
 

@@ -41,7 +41,7 @@ import {
   saveProjectKimiCodeConfig,
   type KimiToolName,
 } from "./src/config.ts";
-import { KIMI_CODE_VERSION, PROVIDER_ID, getBaseUrl, getKimiApiType } from "./src/constants.ts";
+import { PROVIDER_ID, PROVIDER_VERSION, getBaseUrl, getKimiApiType } from "./src/constants.ts";
 import { getCommonHeaders } from "./src/device.ts";
 import {
   type KimiOAuthCredentials,
@@ -463,7 +463,7 @@ function buildKimiMainTitle(config: KimiCodeConfig, cwd: string, extras: KimiOAu
   const sources = loadKimiCodeConfigSources({ cwd, home: os.homedir() });
   const modelName = extras.modelDisplay || "kimi-for-coding";
   return [
-    `Kimi settings (provider v${KIMI_CODE_VERSION})`,
+    `Kimi settings (provider v${PROVIDER_VERSION})`,
     "",
     `Model: ${modelName}`,
     `Protocol: ${config.protocol} (${sources.protocol})`,
