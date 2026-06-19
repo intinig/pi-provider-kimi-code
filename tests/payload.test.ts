@@ -284,7 +284,7 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.top_p, 0.95);
   });
 
-  it("clamps tool_choice to auto when incompatible with thinking", async () => {
+  it("clamps tool_choice to auto for K2.7 Code", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
       tool_choice: "required",

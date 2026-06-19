@@ -296,7 +296,7 @@ async function refreshModelExtras(state: KimiRuntimeState): Promise<void> {
   const token = getKimiUsageToken();
   if (!token) return;
   const extras = await discoverKimiModelMetadata(token, state.config.protocol);
-  if (extras.modelDisplay) {
+  if (Object.keys(extras).length > 0) {
     Object.assign(state.modelExtras, extras);
   }
 }
@@ -459,11 +459,7 @@ function saveScopeKimiCodeConfig(
   }
 }
 
-function buildKimiMainTitle(
-  config: KimiCodeConfig,
-  cwd: string,
-  extras: KimiOAuthExtras,
-): string {
+function buildKimiMainTitle(config: KimiCodeConfig, cwd: string, extras: KimiOAuthExtras): string {
   const sources = loadKimiCodeConfigSources({ cwd, home: os.homedir() });
   const modelName = extras.modelDisplay || "kimi-for-coding";
   return [
@@ -586,46 +582,46 @@ export function KimiCode(overrides?: KimiCodeConfigPatch): ExtensionFactory {
       : {};
     const state: KimiRuntimeState = { cwd, config, modelExtras: discovered, overrides };
     reloadEffectiveKimiRuntimeConfig(state, cwd);
-  const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
+    const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
 
-  pi.registerProvider(PROVIDER_ID, {
-    baseUrl: getBaseUrl(config.protocol),
-    apiKey: "$KIMI_API_KEY",
-    api: getKimiApiType(config.protocol),
-    streamSimple: streamSimpleKimi,
+    pi.registerProvider(PROVIDER_ID, {
+      baseUrl: getBaseUrl(config.protocol),
+      apiKey: "$KIMI_API_KEY",
+      api: getKimiApiType(config.protocol),
+      streamSimple: streamSimpleKimi,
 
-    models: [model],
+      models: [model],
 
-    oauth: {
-      name: "Kimi Code (OAuth)",
-      login: loginKimiCode,
-      refreshToken: refreshKimiCodeToken,
-      getApiKey: (cred) => cred.access,
-      // Reflect server-side model identity on the registered model after login
-      // / refresh. We never rewrite the model id (pi-side `/model` selections
-      // and persisted sessions reference it); only the human-facing name, the
-      // context window, and an out-of-band `wireModelId` carried into the
-      // request payload by streamSimpleKimi.
-      modifyModels: (models, cred) => {
-        const extras = cred as KimiOAuthCredentials;
-        state.modelExtras = extras;
-        reloadEffectiveKimiRuntimeConfig(state, state.cwd);
-        return models.map((model) => {
-          if (model.id !== "kimi-for-coding") return model;
-          return applyKimiOAuthExtrasToModel(model, extras);
-        });
+      oauth: {
+        name: "Kimi Code (OAuth)",
+        login: loginKimiCode,
+        refreshToken: refreshKimiCodeToken,
+        getApiKey: (cred) => cred.access,
+        // Reflect server-side model identity on the registered model after login
+        // / refresh. We never rewrite the model id (pi-side `/model` selections
+        // and persisted sessions reference it); only the human-facing name, the
+        // context window, and an out-of-band `wireModelId` carried into the
+        // request payload by streamSimpleKimi.
+        modifyModels: (models, cred) => {
+          const extras = cred as KimiOAuthCredentials;
+          state.modelExtras = extras;
+          reloadEffectiveKimiRuntimeConfig(state, state.cwd);
+          return models.map((model) => {
+            if (model.id !== "kimi-for-coding") return model;
+            return applyKimiOAuthExtrasToModel(model, extras);
+          });
+        },
       },
-    },
-  });
+    });
 
-  registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
+    registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
 
-  pi.registerCommand("kimi-settings", {
-    description: "Show Kimi usage and configure optional Kimi tools",
-    handler: async (_args, ctx) => {
-      await runKimiCommand(pi, ctx, state);
-    },
-  });
+    pi.registerCommand("kimi-settings", {
+      description: "Show Kimi usage and configure optional Kimi tools",
+      handler: async (_args, ctx) => {
+        await runKimiCommand(pi, ctx, state);
+      },
+    });
   };
 }
 

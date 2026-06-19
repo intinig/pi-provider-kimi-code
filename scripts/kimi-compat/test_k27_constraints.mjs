@@ -128,7 +128,9 @@ if (step1.ok && step1.body?.choices?.[0]?.message?.tool_calls?.length > 0) {
   const toolCallId = assistantMsg.tool_calls[0].id;
   const reasoningContent = assistantMsg.reasoning_content ?? null;
 
-  console.log(`  (reasoning_content present: ${reasoningContent !== null}, length: ${reasoningContent?.length ?? 0})`);
+  console.log(
+    `  (reasoning_content present: ${reasoningContent !== null}, length: ${reasoningContent?.length ?? 0})`,
+  );
 
   // C2: with reasoning_content preserved
   const withReasoning = {

@@ -484,11 +484,14 @@ export async function applyKimiPayloadMutations(
   if (payload.top_p !== undefined && payload.top_p !== 0.95) {
     delete payload.top_p;
   }
-  if (
-    payload.tool_choice !== undefined &&
-    payload.tool_choice !== "auto" &&
-    payload.tool_choice !== "none"
-  ) {
-    payload.tool_choice = "auto";
+  if (payload.tool_choice !== undefined) {
+    const tc = payload.tool_choice;
+    const isAllowed =
+      tc === "auto" ||
+      tc === "none" ||
+      (isRecord(tc) && (tc.type === "auto" || tc.type === "none"));
+    if (!isAllowed) {
+      payload.tool_choice = isRecord(tc) ? { type: "auto" } : "auto";
+    }
   }
 }

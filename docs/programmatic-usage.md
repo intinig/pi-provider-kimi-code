@@ -29,7 +29,7 @@ That's it. The factory returns an `ExtensionFactory` — the same type Pi expect
 `KimiCode()` with no arguments behaves identically to the file-based extension (loads config from `~/.pi/`, project `.pi/`, and env vars):
 
 ```typescript
-extensionFactories: [KimiCode()]
+extensionFactories: [KimiCode()];
 ```
 
 This is what the package's `export default` does internally.
@@ -72,7 +72,7 @@ KimiCode({
     // other values are silently stripped by the payload guard.
     generation: { maxCompletionTokens: 16384 },
   },
-})
+});
 ```
 
 All fields are optional. Only the keys you provide are merged; the rest come from the normal config chain.
@@ -86,10 +86,7 @@ import { KimiCode } from "pi-provider-kimi-code";
 import { myCustomExtension } from "./my-extension";
 
 main(process.argv.slice(2), {
-  extensionFactories: [
-    KimiCode({ protocol: "anthropic" }),
-    myCustomExtension(),
-  ],
+  extensionFactories: [KimiCode({ protocol: "anthropic" }), myCustomExtension()],
 });
 ```
 

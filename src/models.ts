@@ -47,9 +47,12 @@ function mergeInputModalities(
 const COST_STANDARD = { input: 0.897, output: 3.724, cacheRead: 0.179, cacheWrite: 0.897 };
 const COST_HIGH_SPEED = { input: 1.793, output: 7.448, cacheRead: 0.359, cacheWrite: 1.793 };
 
-function resolveModelCost(
-  modelDisplay: string | undefined,
-): { input: number; output: number; cacheRead: number; cacheWrite: number } {
+function resolveModelCost(modelDisplay: string | undefined): {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+} {
   if (modelDisplay && /high\s*speed/i.test(modelDisplay)) return COST_HIGH_SPEED;
   return COST_STANDARD;
 }
