@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
+import { DEFAULT_KIMI_CODE_CONFIG, type KimiResolvedModelConfig } from "../src/config.ts";
 import {
   applyKimiPayloadMutations,
   type JsonRecord,
   type KimiPayloadContext,
-  readEnvOverrides,
   resolveCacheRetention,
 } from "../src/payload.ts";
 import {
@@ -14,10 +14,12 @@ import {
   resolveKimiApiKey,
 } from "../src/stream.ts";
 
+const defaultModelConfig: KimiResolvedModelConfig = { ...DEFAULT_KIMI_CODE_CONFIG.model };
+
 const baseCtx = (overrides: Partial<KimiPayloadContext> = {}): KimiPayloadContext => ({
   api: "anthropic-messages",
   cacheRetention: "short",
-  envOverrides: {},
+  modelConfig: defaultModelConfig,
   ...overrides,
 });
 
@@ -317,7 +319,7 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.max_completion_tokens, undefined);
   });
 
-  it("lets max completion token env override win over payload max_tokens", async () => {
+  it("lets model config maxCompletionTokens override payload max_tokens", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
       max_tokens: 128,
@@ -325,7 +327,10 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(
       payload,
-      baseCtx({ api: "openai-completions", envOverrides: { maxCompletionTokens: 32000 } }),
+      baseCtx({
+        api: "openai-completions",
+        modelConfig: { ...defaultModelConfig, generation: { maxCompletionTokens: 32000 } },
+      }),
     );
 
     assert.equal(payload.max_tokens, undefined);
@@ -397,26 +402,6 @@ describe("applyKimiPayloadMutations", () => {
 
     assert.equal(payload.reasoning_effort, "high");
     assert.deepEqual(payload.thinking, { type: "enabled" });
-  });
-});
-
-describe("readEnvOverrides", () => {
-  it("reads only KIMI_MODEL_MAX_COMPLETION_TOKENS for completion token caps", () => {
-    const oldCompletion = process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
-    const oldLegacy = process.env.KIMI_MODEL_MAX_TOKENS;
-    try {
-      delete process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
-      process.env.KIMI_MODEL_MAX_TOKENS = "32000";
-      assert.equal(readEnvOverrides().maxCompletionTokens, undefined);
-
-      process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS = "64000";
-      assert.equal(readEnvOverrides().maxCompletionTokens, 64000);
-    } finally {
-      if (oldCompletion === undefined) delete process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
-      else process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS = oldCompletion;
-      if (oldLegacy === undefined) delete process.env.KIMI_MODEL_MAX_TOKENS;
-      else process.env.KIMI_MODEL_MAX_TOKENS = oldLegacy;
-    }
   });
 });
 

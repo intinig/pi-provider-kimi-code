@@ -29,6 +29,7 @@ import { relative } from "node:path";
 import {
   type KimiCodeConfig,
   KIMI_TOOL_NAMES,
+  type KimiResolvedModelConfig,
   getProjectKimiCodeConfigPath,
   getGlobalKimiCodeConfigPath,
   loadHomeKimiCodeConfig,
@@ -388,13 +389,25 @@ function formatToolStatus(config: KimiCodeConfig, toolName: KimiToolName): strin
   return `${enabled}, ${collapsed}`;
 }
 
+function withResolvedConfig(
+  model: ReturnType<typeof buildKimiModelFromConfig>,
+  config: KimiResolvedModelConfig,
+) {
+  return { ...model, resolvedConfig: config } as ReturnType<typeof buildKimiModelFromConfig> & {
+    resolvedConfig: KimiResolvedModelConfig;
+  };
+}
+
 export default async function (pi: ExtensionAPI) {
   const config = loadKimiCodeConfig({ cwd: process.cwd(), home: os.homedir() });
   const baseModel = buildKimiModelFromConfig(config.model);
   const discoveryToken = getKimiUsageToken();
   const discovered = discoveryToken ? await discoverKimiModelMetadata(discoveryToken) : {};
   const resolvedConfig = resolveKimiModelConfig(config.model, discovered);
-  const model = applyKimiOAuthExtrasToModel(baseModel, discovered);
+  const model = withResolvedConfig(
+    applyKimiOAuthExtrasToModel(baseModel, discovered),
+    resolvedConfig,
+  );
 
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: getBaseUrl(),
@@ -419,7 +432,10 @@ export default async function (pi: ExtensionAPI) {
         Object.assign(resolvedConfig, resolveKimiModelConfig(config.model, extras));
         return models.map((model) => {
           if (model.id !== "kimi-for-coding") return model;
-          return applyKimiOAuthExtrasToModel(model, extras);
+          return withResolvedConfig(
+            applyKimiOAuthExtrasToModel(model, extras),
+            resolveKimiModelConfig(config.model, extras),
+          );
         });
       },
     },

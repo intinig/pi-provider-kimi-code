@@ -3,6 +3,7 @@
 // and the top-level applyKimiPayloadMutations that orchestrates them.
 
 import type { CacheRetention, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { KimiResolvedModelConfig } from "./config.ts";
 
 import { getBaseUrl } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
@@ -16,12 +17,6 @@ const DEFAULT_KIMI_INLINE_UPLOAD_THRESHOLD_BYTES = 1 * 1024 * 1024;
 
 export type JsonRecord = Record<string, unknown>;
 export type Uploader = (mimeType: string, data: string) => Promise<string | null>;
-
-export interface KimiEnvOverrides {
-  temperature?: number;
-  topP?: number;
-  maxCompletionTokens?: number;
-}
 
 export function resolveCacheRetention(value?: CacheRetention): CacheRetention {
   if (value === "none" || value === "short" || value === "long") return value;
@@ -39,7 +34,7 @@ export interface KimiPayloadContext {
   cacheRetention: CacheRetention;
   reasoning?: ThinkingLevel;
   thinkingKeep?: string;
-  envOverrides: KimiEnvOverrides;
+  modelConfig: KimiResolvedModelConfig;
   supportsThinkingType?: "only" | "no" | "both";
 }
 
@@ -93,17 +88,6 @@ function getUploadFilename(mimeType: string): string {
     "image/webp": "upload.webp",
   };
   return map[mimeType] ?? "upload.bin";
-}
-
-export function readEnvOverrides(): KimiEnvOverrides {
-  const out: KimiEnvOverrides = {};
-  const temp = process.env.KIMI_MODEL_TEMPERATURE;
-  if (temp) out.temperature = parseFloat(temp);
-  const topP = process.env.KIMI_MODEL_TOP_P;
-  if (topP) out.topP = parseFloat(topP);
-  const maxCompletionTokens = process.env.KIMI_MODEL_MAX_COMPLETION_TOKENS;
-  if (maxCompletionTokens) out.maxCompletionTokens = parseInt(maxCompletionTokens, 10);
-  return out;
 }
 
 // =============================================================================
@@ -454,11 +438,11 @@ export async function applyKimiPayloadMutations(
     delete payload.max_tokens;
   }
 
-  const { temperature, topP, maxCompletionTokens } = ctx.envOverrides;
-  if (temperature !== undefined) payload.temperature = temperature;
-  if (topP !== undefined) payload.top_p = topP;
-  if (maxCompletionTokens !== undefined) {
-    payload.max_completion_tokens = maxCompletionTokens;
+  const generation = ctx.modelConfig.generation;
+  if (generation.temperature !== undefined) payload.temperature = generation.temperature;
+  if (generation.topP !== undefined) payload.top_p = generation.topP;
+  if (generation.maxCompletionTokens !== undefined) {
+    payload.max_completion_tokens = generation.maxCompletionTokens;
   }
 
   // 5. Spread extra_body into top-level payload before reasoning mapping,

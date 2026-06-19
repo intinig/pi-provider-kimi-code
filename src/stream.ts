@@ -17,6 +17,7 @@ import {
   streamSimpleAnthropic,
   streamSimpleOpenAICompletions,
 } from "@earendil-works/pi-ai";
+import type { KimiResolvedModelConfig } from "./config.ts";
 
 import { IS_OPENAI_PROTOCOL, PROTOCOL } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
@@ -25,7 +26,6 @@ import {
   type Uploader,
   applyKimiPayloadMutations,
   isRecord,
-  readEnvOverrides,
   resolveCacheRetention,
   uploadKimiFile,
 } from "./payload.ts";
@@ -163,8 +163,17 @@ export function streamSimpleKimi(
   )?.prompt_cache_key;
   const cacheKey = (typeof cacheKeyOverride === "string" && cacheKeyOverride) || options?.sessionId;
   const cacheRetention = resolveCacheRetention(options?.cacheRetention);
-  const envOverrides = readEnvOverrides();
-  const thinkingKeep = process.env.KIMI_MODEL_THINKING_KEEP;
+  const modelConfig = (model as Model<Api> & { resolvedConfig?: KimiResolvedModelConfig })
+    .resolvedConfig ?? {
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    input: ["text"],
+    reasoning: model.reasoning,
+    reasoningMap: {},
+    thinkingKeep: null,
+    generation: {},
+  };
+  const thinkingKeep = modelConfig.thinkingKeep ?? undefined;
   const originalOnPayload = options?.onPayload;
   // The pi-side model id ("kimi-for-coding") is what users select via /model
   // and what gets persisted into sessions. The wire model id discovered at
@@ -198,7 +207,7 @@ export function streamSimpleKimi(
             cacheRetention,
             reasoning: options?.reasoning,
             thinkingKeep,
-            envOverrides,
+            modelConfig,
             supportsThinkingType,
           });
           if (
