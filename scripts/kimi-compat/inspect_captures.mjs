@@ -17,7 +17,13 @@ if (files.length === 0) {
 }
 
 for (const file of files) {
-  const capture = JSON.parse(readFileSync(join(captureDir, file), "utf8"));
+  let capture;
+  try {
+    capture = JSON.parse(readFileSync(join(captureDir, file), "utf8"));
+  } catch (err) {
+    console.error(`  skipping ${file}: ${err.message}`);
+    continue;
+  }
   const body = capture.bodyJson;
   const tools = Array.isArray(body?.tools) ? body.tools : [];
   const rows = [];

@@ -68,6 +68,10 @@ const req = https.request(
   (res) => {
     const chunks = [];
     res.on("data", (chunk) => chunks.push(chunk));
+    res.on("error", (err) => {
+      console.error("Response error:", err.message);
+      process.exit(1);
+    });
     res.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8");
       console.log(`Status: ${res.statusCode} ${res.statusMessage}`);

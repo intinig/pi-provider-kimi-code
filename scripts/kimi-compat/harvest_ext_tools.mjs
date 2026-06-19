@@ -9,10 +9,10 @@
 // us the exact payload the provider would serialize into the `tools` array.
 //
 // Usage:
-//   node scripts/harvest-ext-tools.mjs <name>=<moduleSpecifier> [...] [--out file.json]
+//   node scripts/kimi-compat/harvest_ext_tools.mjs <name>=<moduleSpecifier> [...] [--out file.json]
 //
 // Example:
-//   node scripts/harvest-ext-tools.mjs \
+//   node scripts/kimi-compat/harvest_ext_tools.mjs \
 //     pi-subagents=pi-subagents/src/extension/index.ts \
 //     --out ../ext-tool-schemas/pi-subagents.json
 
@@ -37,7 +37,9 @@ for (let i = 0; i < args.length; i++) {
 }
 
 if (targets.length === 0) {
-  console.error("Usage: node scripts/harvest-ext-tools.mjs <name>=<specifier> [...] [--out file]");
+  console.error(
+    "Usage: node scripts/kimi-compat/harvest_ext_tools.mjs <name>=<specifier> [...] [--out file]",
+  );
   process.exit(1);
 }
 

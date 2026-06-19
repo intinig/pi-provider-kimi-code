@@ -16,7 +16,12 @@ function latestRequestFile() {
 function redactHeaderValue(name, value) {
   if (showSecrets) return value;
   const lower = name.toLowerCase();
-  if (lower === "authorization" || lower === "x-api-key" || lower === "api-key") {
+  if (
+    lower === "authorization" ||
+    lower === "x-api-key" ||
+    lower === "api-key" ||
+    lower === "cookie"
+  ) {
     return "<redacted>";
   }
   return value;

@@ -1,10 +1,11 @@
+import http from "node:http";
 import https from "node:https";
 
 const apiKey = process.env.KIMI_API_KEY ?? process.argv[2];
 const baseUrl = process.env.KIMI_CODE_BASE_URL ?? "https://api.kimi.com/coding/v1";
 
 if (!apiKey) {
-  console.error("Usage: KIMI_API_KEY=sk-... node scripts/find-total-limit.mjs");
+  console.error("Usage: KIMI_API_KEY=sk-... node scripts/kimi-compat/find_total_limit.mjs");
   process.exit(1);
 }
 
@@ -42,8 +43,9 @@ function buildTool(name, schemaSize) {
 
 function sendRequest(payload) {
   const body = JSON.stringify(payload);
+  const client = url.protocol === "http:" ? http : https;
   return new Promise((resolve, reject) => {
-    const req = https.request(
+    const req = client.request(
       {
         protocol: url.protocol,
         hostname: url.hostname,

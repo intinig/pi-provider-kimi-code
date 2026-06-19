@@ -31,7 +31,9 @@ const url = new URL("chat/completions", baseUrl.replace(/\/?$/, "/"));
 
 const files = process.argv.slice(2);
 if (files.length === 0) {
-  console.error("Usage: node --import tsx scripts/test-ext-compat.mjs <harvested.json> [...]");
+  console.error(
+    "Usage: node --import tsx scripts/kimi-compat/test_ext_compat.mjs <harvested.json> [...]",
+  );
   process.exit(1);
 }
 
@@ -52,7 +54,7 @@ function normalizeTool(tool) {
   return tools[0];
 }
 
-function send(label, tool) {
+function send(tool) {
   const body = JSON.stringify({
     model: "kimi-for-coding",
     messages: [{ role: "user", content: "Say hi." }],
@@ -92,6 +94,9 @@ function send(label, tool) {
       },
     );
     req.on("error", reject);
+    req.setTimeout(30000, () => {
+      req.destroy(new Error("Request timeout"));
+    });
     req.end(body);
   });
 }
@@ -123,8 +128,8 @@ for (const file of files) {
 
     if (apiKey) {
       const rawTool = { type: "function", function: tool.function };
-      const rawRes = await send("raw", rawTool);
-      const normRes = await send("norm", normalized);
+      const rawRes = await send(rawTool);
+      const normRes = await send(normalized);
       console.log(
         `      live: raw ${rawRes.status} ${rawRes.ok ? "OK" : "REJECT"}${rawRes.detail}` +
           ` | normalized ${normRes.status} ${normRes.ok ? "OK" : "REJECT"}${normRes.detail}`,

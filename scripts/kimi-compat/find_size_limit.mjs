@@ -4,7 +4,7 @@ const apiKey = process.env.KIMI_API_KEY ?? process.argv[2];
 const baseUrl = process.env.KIMI_CODE_BASE_URL ?? "https://api.kimi.com/coding/v1";
 
 if (!apiKey) {
-  console.error("Usage: KIMI_API_KEY=sk-... node scripts/find-size-limit.mjs");
+  console.error("Usage: KIMI_API_KEY=sk-... node scripts/kimi-compat/find_size_limit.mjs");
   process.exit(1);
 }
 
@@ -84,7 +84,7 @@ async function probe(size) {
   const payload = buildPayload(size);
   const schemaActual = Buffer.byteLength(JSON.stringify(payload.tools[0].function.parameters));
   const res = await sendRequest(payload);
-  const ok = res.status === 200 || res.status !== 400;
+  const ok = res.status >= 200 && res.status < 300;
   const label = ok ? "OK" : "REJECT";
   console.log(`  schema=${schemaActual} bytes -> ${res.status} ${label}`);
   return ok;
@@ -99,7 +99,7 @@ let lo = 1000;
 let hi = 30000;
 
 const coarseStep = 1000;
-let lastOk = lo;
+let lastOk = null;
 let firstFail = hi;
 
 for (let size = lo; size <= hi; size += coarseStep) {
@@ -110,6 +110,11 @@ for (let size = lo; size <= hi; size += coarseStep) {
     firstFail = size;
     break;
   }
+}
+
+if (lastOk === null) {
+  console.error("Coarse scan found no successful size. Check credentials / server status.");
+  process.exit(1);
 }
 
 console.log();

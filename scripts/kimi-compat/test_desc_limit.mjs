@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import https from "node:https";
 import { join } from "node:path";
 
@@ -6,16 +6,29 @@ const apiKey = process.env.KIMI_API_KEY ?? process.argv[2];
 const baseUrl = process.env.KIMI_CODE_BASE_URL ?? "https://api.kimi.com/coding/v1";
 
 if (!apiKey) {
-  console.error("Usage: KIMI_API_KEY=sk-... node scripts/test-desc-limit.mjs");
+  console.error("Usage: KIMI_API_KEY=sk-... node scripts/kimi-compat/test_desc_limit.mjs");
   process.exit(1);
 }
 
 const url = new URL("chat/completions", baseUrl.replace(/\/?$/, "/"));
 
 const captureDir = join(import.meta.dirname, "..", "captures");
-const capture = JSON.parse(
-  readFileSync(join(captureDir, "0001-2026-06-04T23-22-09-516Z-request.json"), "utf8"),
-);
+
+function latestCaptureFile(dir) {
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith("-request.json"))
+    .sort();
+  return files.at(-1) ?? null;
+}
+
+const captureFile = process.env.CAPTURE_FILE ?? process.argv[3] ?? latestCaptureFile(captureDir);
+if (!captureFile) {
+  console.error("No capture file specified and no captures found in", captureDir);
+  process.exit(1);
+}
+const capturePath = captureFile.includes("/") ? captureFile : join(captureDir, captureFile);
+const capture = JSON.parse(readFileSync(capturePath, "utf8"));
 const body = JSON.parse(capture.bodyUtf8);
 const originalDesc = body.tools[4].function.description;
 

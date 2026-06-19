@@ -6,7 +6,7 @@ const apiKey = process.env.KIMI_API_KEY ?? process.argv[2];
 const baseUrl = process.env.KIMI_CODE_BASE_URL ?? "https://api.kimi.com/coding/v1";
 
 if (!apiKey) {
-  console.error("Usage: KIMI_API_KEY=sk-... node scripts/test-ref-dedup.mjs");
+  console.error("Usage: KIMI_API_KEY=sk-... node scripts/kimi-compat/test_ref_dedup.mjs");
   process.exit(1);
 }
 
