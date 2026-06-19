@@ -255,11 +255,42 @@ describe("applyKimiPayloadMutations", () => {
     const payload: JsonRecord = {
       model: "kimi-for-coding",
       messages: [{ role: "user", content: "hi" }],
-      temperature: 0.4,
+      seed: 42,
     };
     await applyKimiPayloadMutations(payload, baseCtx());
     assert.equal(payload.model, "kimi-for-coding");
-    assert.equal(payload.temperature, 0.4);
+    assert.equal(payload.seed, 42);
+  });
+
+  it("strips temperature and top_p values rejected by K2.7 Code", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      temperature: 0.4,
+      top_p: 0.8,
+    };
+    await applyKimiPayloadMutations(payload, baseCtx());
+    assert.equal(payload.temperature, undefined);
+    assert.equal(payload.top_p, undefined);
+  });
+
+  it("keeps temperature 1 and top_p 0.95 (K2.7 defaults)", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      temperature: 1,
+      top_p: 0.95,
+    };
+    await applyKimiPayloadMutations(payload, baseCtx());
+    assert.equal(payload.temperature, 1);
+    assert.equal(payload.top_p, 0.95);
+  });
+
+  it("clamps tool_choice to auto when incompatible with thinking", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      tool_choice: "required",
+    };
+    await applyKimiPayloadMutations(payload, baseCtx());
+    assert.equal(payload.tool_choice, "auto");
   });
 
   it("merges reasoning type into existing thinking fields at top level", async () => {
