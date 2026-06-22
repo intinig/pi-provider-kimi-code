@@ -79,9 +79,22 @@ interface KimiRuntimeState {
   overrides?: KimiCodeConfigPatch;
 }
 
-function isProjectConfigTrusted(ctx: unknown): boolean {
+async function isKimiProjectConfigApproved(ctx: unknown, cwd: string): Promise<boolean> {
   const check = (ctx as { isProjectTrusted?: () => boolean } | undefined)?.isProjectTrusted;
-  return typeof check === "function" ? check.call(ctx) : true;
+  if (typeof check !== "function") return true;
+  if (!check.call(ctx)) return false;
+
+  const mod = (await import("@earendil-works/pi-coding-agent")) as unknown as {
+    ProjectTrustStore?: new (agentDir: string) => { get(cwd: string): boolean | null };
+    getAgentDir?: () => string;
+  };
+  if (!mod.ProjectTrustStore || !mod.getAgentDir) return true;
+
+  try {
+    return new mod.ProjectTrustStore(mod.getAgentDir()).get(cwd) === true;
+  } catch {
+    return false;
+  }
 }
 
 function buildKimiTool(toolName: KimiToolName, config: KimiCodeConfig) {
@@ -320,7 +333,7 @@ async function runKimiCommand(
   ctx: ExtensionCommandContext,
   state: KimiRuntimeState,
 ): Promise<void> {
-  const projectTrusted = isProjectConfigTrusted(ctx);
+  const projectTrusted = await isKimiProjectConfigApproved(ctx, ctx.cwd);
   let config = applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
     updateActiveTools: true,
     projectTrusted,
@@ -473,7 +486,7 @@ function saveAndApplyKimiCodeConfig(
   saveScopeKimiCodeConfig(scope, ctx.cwd, config);
   applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
     updateActiveTools: true,
-    projectTrusted: scope === "project" ? true : isProjectConfigTrusted(ctx),
+    projectTrusted: scope === "project" ? true : state.projectTrusted,
   });
 }
 
@@ -676,7 +689,7 @@ export function KimiCode(overrides?: KimiCodeConfigPatch): ExtensionFactory {
     registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
 
     pi.on("session_start", async (_event, ctx) => {
-      const projectTrusted = isProjectConfigTrusted(ctx);
+      const projectTrusted = await isKimiProjectConfigApproved(ctx, ctx.cwd);
       applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
         updateActiveTools: true,
         projectTrusted,
