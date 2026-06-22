@@ -114,6 +114,10 @@ function makePi() {
 }
 
 describe("extension tool registration", () => {
+  it("loads the extension module against installed Pi package exports", () => {
+    assert.equal(typeof registerKimiCodeExtension, "function");
+  });
+
   it("does not register Moonshot tools when config is missing", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const { commands, pi, providers, tools } = makePi();
@@ -163,6 +167,34 @@ describe("extension tool registration", () => {
     assert.deepEqual(
       tools.map((tool) => tool.name),
       [],
+    );
+  });
+
+  it("falls back to trusted project config when Pi has no project trust API", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const home = tempDir("kimi-extension-home");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        tools: {
+          moonshot_search: { enabled: true },
+        },
+      }),
+      "utf8",
+    );
+    const { emit, pi, tools } = makePi();
+
+    await withCwd(cwd, async () => {
+      process.env.HOME = home;
+      await registerKimiCodeExtension(pi);
+      await emit("session_start", { reason: "startup" }, { cwd });
+    });
+
+    assert.deepEqual(
+      tools.map((tool) => tool.name),
+      ["moonshot_search"],
     );
   });
 
