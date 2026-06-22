@@ -62,6 +62,10 @@ function makePi() {
   const providers: string[] = [];
   const providerConfigs = new Map<string, ProviderConfig>();
   const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const eventHandlers = new Map<
+    string,
+    Array<(event: unknown, ctx: unknown) => Promise<void> | void>
+  >();
   let activeTools: string[] = [];
   const pi = {
     registerProvider(name: string, config: ProviderConfig) {
@@ -79,6 +83,11 @@ function makePi() {
     registerCommand(name: string, command: Omit<RegisteredCommand, "name" | "sourceInfo">) {
       commands.set(name, command);
     },
+    on(eventName: string, handler: (event: unknown, ctx: unknown) => Promise<void> | void) {
+      const handlers = eventHandlers.get(eventName) ?? [];
+      handlers.push(handler);
+      eventHandlers.set(eventName, handlers);
+    },
     getActiveTools() {
       return activeTools;
     },
@@ -92,6 +101,11 @@ function makePi() {
     providers,
     providerConfigs,
     tools,
+    emit: async (eventName: string, event: unknown, ctx: unknown) => {
+      for (const handler of eventHandlers.get(eventName) ?? []) {
+        await handler(event, ctx);
+      }
+    },
     getActiveTools: () => activeTools,
     setActiveTools: (toolNames: string[]) => {
       activeTools = [...toolNames];
@@ -132,8 +146,29 @@ describe("extension tool registration", () => {
     assert.equal(providerConfigs.get("kimi-coding")?.headers, undefined);
   });
 
-  it("registers only enabled Moonshot tools", async () => {
+  it("does not read project config before project trust is active", async () => {
     const cwd = tempDir("kimi-extension-cwd");
+    const home = tempDir("kimi-extension-home");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(configPath, "{", "utf8");
+    const { emit, pi, tools } = makePi();
+
+    await withCwd(cwd, async () => {
+      process.env.HOME = home;
+      await registerKimiCodeExtension(pi);
+      await emit("session_start", { reason: "startup" }, { cwd, isProjectTrusted: () => false });
+    });
+
+    assert.deepEqual(
+      tools.map((tool) => tool.name),
+      [],
+    );
+  });
+
+  it("registers only enabled Moonshot tools after project trust is active", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const home = tempDir("kimi-extension-home");
     const configPath = getProjectKimiCodeConfigPath(cwd);
     mkdirSync(join(configPath, ".."), { recursive: true });
     writeFileSync(
@@ -146,9 +181,13 @@ describe("extension tool registration", () => {
       }),
       "utf8",
     );
-    const { pi, tools } = makePi();
+    const { emit, pi, tools } = makePi();
 
-    await withCwd(cwd, () => registerKimiCodeExtension(pi));
+    await withCwd(cwd, async () => {
+      process.env.HOME = home;
+      await registerKimiCodeExtension(pi);
+      await emit("session_start", { reason: "startup" }, { cwd, isProjectTrusted: () => true });
+    });
 
     assert.deepEqual(
       tools.map((tool) => tool.name),
