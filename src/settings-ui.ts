@@ -95,7 +95,16 @@ export function buildConfigScopeTitle(
 }
 
 export function homeRelative(filePath: string, home = os.homedir()): string {
-  return filePath.startsWith(`${home}/`) ? `~/${filePath.slice(home.length + 1)}` : filePath;
+  const normalizedHome = home.replace(/[\\/]+$/, "");
+  if (filePath === normalizedHome) return "~";
+
+  const slashPrefix = `${normalizedHome}/`;
+  if (filePath.startsWith(slashPrefix)) return `~/${filePath.slice(slashPrefix.length)}`;
+
+  const backslashPrefix = `${normalizedHome}\\`;
+  if (filePath.startsWith(backslashPrefix)) return `~\\${filePath.slice(backslashPrefix.length)}`;
+
+  return filePath;
 }
 
 export function toolMenuItem(config: KimiCodeConfig, toolName: KimiToolName): string {

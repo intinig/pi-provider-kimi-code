@@ -150,6 +150,10 @@ describe("settings title, status, and menu helpers", () => {
       homeRelative("/tmp/other/.pi/config.json", "/tmp/kimi-home"),
       "/tmp/other/.pi/config.json",
     );
+    assert.equal(
+      homeRelative("C:\\Users\\kimi\\.pi\\providers\\kimi-coding\\config.json", "C:\\Users\\kimi"),
+      "~\\.pi\\providers\\kimi-coding\\config.json",
+    );
   });
 });
 
