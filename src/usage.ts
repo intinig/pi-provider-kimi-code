@@ -1,6 +1,6 @@
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
-import { PROVIDER_ID } from "./constants.ts";
+import { PROVIDER_ID, getBaseUrl } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
 import { refreshKimiAuthToken } from "./oauth.ts";
 
@@ -101,8 +101,13 @@ function quotaBar(remaining: number, limit: number): string {
   return `[${"#".repeat(filled)}${"-".repeat(width - filled)}]`;
 }
 
+export function buildKimiUsageUrl(baseUrl = getBaseUrl("openai")): string {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  return normalized.endsWith("/v1") ? `${normalized}/usages` : `${normalized}/v1/usages`;
+}
+
 function fetchKimiUsage(token: string, signal: AbortSignal): Promise<Response> {
-  return fetch("https://api.kimi.com/coding/v1/usages", {
+  return fetch(buildKimiUsageUrl(), {
     method: "GET",
     headers: {
       ...getCommonHeaders(),

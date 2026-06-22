@@ -1,7 +1,37 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatUsageRow, parseMembership, parseUsageRow, parseUsageSummary } from "../src/usage.ts";
+import {
+  buildKimiUsageUrl,
+  formatUsageRow,
+  parseMembership,
+  parseUsageRow,
+  parseUsageSummary,
+} from "../src/usage.ts";
+
+describe("buildKimiUsageUrl", () => {
+  it("uses /usages under v1 base URLs", () => {
+    assert.equal(
+      buildKimiUsageUrl("https://api.kimi.com/coding/v1"),
+      "https://api.kimi.com/coding/v1/usages",
+    );
+    assert.equal(
+      buildKimiUsageUrl("https://proxy.example/kimi/v1/"),
+      "https://proxy.example/kimi/v1/usages",
+    );
+  });
+
+  it("adds /v1/usages under non-v1 base URLs", () => {
+    assert.equal(
+      buildKimiUsageUrl("https://api.kimi.com/coding"),
+      "https://api.kimi.com/coding/v1/usages",
+    );
+    assert.equal(
+      buildKimiUsageUrl("https://proxy.example/kimi"),
+      "https://proxy.example/kimi/v1/usages",
+    );
+  });
+});
 
 describe("parseUsageSummary", () => {
   it("formats membership, weekly usage, and limit details", () => {
