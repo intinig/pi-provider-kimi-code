@@ -15,6 +15,7 @@
  *                       login/refresh handlers, stream-level auth refresh
  *   src/models.ts     — /v1/models discovery + extras-merging helpers
  *   src/payload.ts    — payload pipeline + file upload + transforms
+ *   src/project-trust.ts — project config approval compatibility helpers
  *   src/stream.ts     — empty-response filter + streamSimpleKimi orchestrator
  */
 
@@ -52,6 +53,7 @@ import {
   resolveKimiModelConfig,
 } from "./src/models.ts";
 import { loginKimiCode, refreshKimiAuthToken, refreshKimiCodeToken } from "./src/oauth.ts";
+import { isKimiProjectConfigApproved } from "./src/project-trust.ts";
 import { setStoreResolvedKimiConfig, streamSimpleKimi } from "./src/stream.ts";
 import { buildMoonshotFetchTool, buildMoonshotSearchTool } from "./src/tools/moonshot.ts";
 import { buildKimiDatasourceTool } from "./src/tools/datasource.ts";
@@ -77,11 +79,6 @@ interface KimiRuntimeState {
   modelExtras: KimiOAuthExtras;
   projectTrusted: boolean;
   overrides?: KimiCodeConfigPatch;
-}
-
-function isProjectConfigTrusted(ctx: unknown): boolean {
-  const check = (ctx as { isProjectTrusted?: () => boolean } | undefined)?.isProjectTrusted;
-  return typeof check === "function" ? check.call(ctx) : true;
 }
 
 function buildKimiTool(toolName: KimiToolName, config: KimiCodeConfig) {
@@ -320,7 +317,7 @@ async function runKimiCommand(
   ctx: ExtensionCommandContext,
   state: KimiRuntimeState,
 ): Promise<void> {
-  const projectTrusted = isProjectConfigTrusted(ctx);
+  const projectTrusted = await isKimiProjectConfigApproved(ctx, ctx.cwd);
   let config = applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
     updateActiveTools: true,
     projectTrusted,
@@ -473,7 +470,7 @@ function saveAndApplyKimiCodeConfig(
   saveScopeKimiCodeConfig(scope, ctx.cwd, config);
   applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
     updateActiveTools: true,
-    projectTrusted: scope === "project" ? true : isProjectConfigTrusted(ctx),
+    projectTrusted: scope === "project" ? true : state.projectTrusted,
   });
 }
 
@@ -676,7 +673,7 @@ export function KimiCode(overrides?: KimiCodeConfigPatch): ExtensionFactory {
     registerConfiguredMoonshotTools(pi, state.config, { updateActiveTools: false });
 
     pi.on("session_start", async (_event, ctx) => {
-      const projectTrusted = isProjectConfigTrusted(ctx);
+      const projectTrusted = await isKimiProjectConfigApproved(ctx, ctx.cwd);
       applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
         updateActiveTools: true,
         projectTrusted,

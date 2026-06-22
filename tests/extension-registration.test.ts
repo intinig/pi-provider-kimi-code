@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,6 +38,29 @@ async function withCwd<T>(cwd: string, fn: () => T | Promise<T>): Promise<T> {
       process.env.HOME = originalHome;
     }
   }
+}
+
+async function withAgentDir<T>(agentDir: string, fn: () => T | Promise<T>): Promise<T> {
+  const originalDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    return await fn();
+  } finally {
+    if (originalDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = originalDir;
+    }
+  }
+}
+
+function writeProjectTrust(agentDir: string, cwd: string, trusted = true): void {
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(
+    join(agentDir, "trust.json"),
+    JSON.stringify({ [realpathSync(cwd)]: trusted }),
+    "utf8",
+  );
 }
 
 function withTempAuthFile(credential: Record<string, unknown>) {
@@ -155,7 +178,15 @@ describe("extension tool registration", () => {
     const home = tempDir("kimi-extension-home");
     const configPath = getProjectKimiCodeConfigPath(cwd);
     mkdirSync(join(configPath, ".."), { recursive: true });
-    writeFileSync(configPath, "{", "utf8");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        tools: {
+          moonshot_search: { enabled: true },
+        },
+      }),
+      "utf8",
+    );
     const { emit, pi, tools } = makePi();
 
     await withCwd(cwd, async () => {
@@ -163,6 +194,40 @@ describe("extension tool registration", () => {
       await registerKimiCodeExtension(pi);
       await emit("session_start", { reason: "startup" }, { cwd, isProjectTrusted: () => false });
     });
+
+    assert.deepEqual(
+      tools.map((tool) => tool.name),
+      [],
+    );
+  });
+
+  it("does not read project config without saved project trust", async () => {
+    const piExports = (await import("@earendil-works/pi-coding-agent")) as Record<string, unknown>;
+    if (!piExports.ProjectTrustStore) return;
+
+    const cwd = tempDir("kimi-extension-cwd");
+    const home = tempDir("kimi-extension-home");
+    const agentDir = tempDir("kimi-extension-agent");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        tools: {
+          moonshot_search: { enabled: true },
+        },
+      }),
+      "utf8",
+    );
+    const { emit, pi, tools } = makePi();
+
+    await withAgentDir(agentDir, () =>
+      withCwd(cwd, async () => {
+        process.env.HOME = home;
+        await registerKimiCodeExtension(pi);
+        await emit("session_start", { reason: "startup" }, { cwd, isProjectTrusted: () => true });
+      }),
+    );
 
     assert.deepEqual(
       tools.map((tool) => tool.name),
@@ -201,6 +266,7 @@ describe("extension tool registration", () => {
   it("registers only enabled Moonshot tools after project trust is active", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const home = tempDir("kimi-extension-home");
+    const agentDir = tempDir("kimi-extension-agent");
     const configPath = getProjectKimiCodeConfigPath(cwd);
     mkdirSync(join(configPath, ".."), { recursive: true });
     writeFileSync(
@@ -215,11 +281,14 @@ describe("extension tool registration", () => {
     );
     const { emit, pi, tools } = makePi();
 
-    await withCwd(cwd, async () => {
-      process.env.HOME = home;
-      await registerKimiCodeExtension(pi);
-      await emit("session_start", { reason: "startup" }, { cwd, isProjectTrusted: () => true });
-    });
+    writeProjectTrust(agentDir, cwd);
+    await withAgentDir(agentDir, () =>
+      withCwd(cwd, async () => {
+        process.env.HOME = home;
+        await registerKimiCodeExtension(pi);
+        await emit("session_start", { reason: "startup" }, { cwd, isProjectTrusted: () => true });
+      }),
+    );
 
     assert.deepEqual(
       tools.map((tool) => tool.name),
