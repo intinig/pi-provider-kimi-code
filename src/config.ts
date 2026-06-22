@@ -9,6 +9,8 @@ export type KimiToolName = (typeof KIMI_TOOL_NAMES)[number];
 
 export type KimiConfigSource = "runtime" | "env" | "project" | "home" | "default";
 
+export const PI_CONFIG_DIR_NAME = ".pi";
+
 export type KimiInputModality = "text" | "image" | "video";
 
 export interface ModelReasoningEntry {
@@ -83,6 +85,7 @@ export interface LoadKimiCodeConfigOptions {
   cwd: string;
   home: string;
   env?: NodeJS.ProcessEnv;
+  includeProject?: boolean;
 }
 
 export class ConfigError extends Error {
@@ -147,11 +150,11 @@ export function getRuntimeKimiCodeConfigOverride(): KimiCodeConfigPatch {
 }
 
 export function getGlobalKimiCodeConfigPath(home: string): string {
-  return join(home, ".pi", "providers", PROVIDER_ID, "config.json");
+  return join(home, PI_CONFIG_DIR_NAME, "providers", PROVIDER_ID, "config.json");
 }
 
 export function getProjectKimiCodeConfigPath(cwd: string): string {
-  return join(cwd, ".pi", "providers", PROVIDER_ID, "config.json");
+  return join(cwd, PI_CONFIG_DIR_NAME, "providers", PROVIDER_ID, "config.json");
 }
 
 export function kimiCodeConfigPath(home: string): string {
@@ -483,15 +486,23 @@ function buildSources(
 function loadLayers(
   options: LoadKimiCodeConfigOptions,
 ): Array<{ source: KimiConfigSource; config: Record<string, unknown> }> {
-  return [
+  const layers: Array<{ source: KimiConfigSource; config: Record<string, unknown> }> = [
     { source: "home", config: readConfigFile(getGlobalKimiCodeConfigPath(options.home)) },
-    { source: "project", config: readConfigFile(getProjectKimiCodeConfigPath(options.cwd)) },
+  ];
+  if (options.includeProject !== false) {
+    layers.push({
+      source: "project",
+      config: readConfigFile(getProjectKimiCodeConfigPath(options.cwd)),
+    });
+  }
+  layers.push(
     {
       source: "env",
       config: envConfigPatch(options.env ?? process.env) as Record<string, unknown>,
     },
     { source: "runtime", config: runtimeOverride as Record<string, unknown> },
-  ];
+  );
+  return layers;
 }
 
 export function loadKimiCodeConfig(
