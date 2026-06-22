@@ -1,7 +1,14 @@
 export async function isKimiProjectConfigApproved(ctx: unknown, cwd: string): Promise<boolean> {
   const check = (ctx as { isProjectTrusted?: () => boolean } | undefined)?.isProjectTrusted;
   if (typeof check !== "function") return true;
-  if (!check.call(ctx)) return false;
+
+  let sessionTrusted: boolean;
+  try {
+    sessionTrusted = check.call(ctx);
+  } catch {
+    return false;
+  }
+  if (!sessionTrusted) return false;
 
   const mod = (await import("@earendil-works/pi-coding-agent")) as unknown as {
     ProjectTrustStore?: new (agentDir: string) => { get(cwd: string): boolean | null };

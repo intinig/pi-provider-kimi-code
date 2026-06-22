@@ -39,6 +39,20 @@ describe("isKimiProjectConfigApproved", () => {
     );
   });
 
+  it("fails closed when the Pi project trust callback throws", async () => {
+    assert.equal(
+      await isKimiProjectConfigApproved(
+        {
+          isProjectTrusted: () => {
+            throw new Error("trust unavailable");
+          },
+        },
+        tempDir("kimi-project-trust-cwd"),
+      ),
+      false,
+    );
+  });
+
   it("requires saved Pi project trust when the trust store API is available", async () => {
     const piExports = (await import("@earendil-works/pi-coding-agent")) as Record<string, unknown>;
     const ProjectTrustStore = piExports.ProjectTrustStore as
