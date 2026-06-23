@@ -54,7 +54,6 @@ import {
   buildSettingsTheme,
   formatByteSize,
   formatScopeDescription,
-  formatToolStatus,
   parseByteSizeInput,
 } from "./src/settings-ui.ts";
 import { setStoreResolvedKimiConfig, streamSimpleKimi } from "./src/stream.ts";
@@ -188,7 +187,7 @@ async function openSettingsMenu(
         saveScopeKimiCodeConfig(scope, ctx.cwd, drafts[scope]);
         applyEffectiveKimiRuntimeConfig(pi, state, ctx.cwd, {
           updateActiveTools: true,
-          projectTrusted: scope === "project" ? true : state.projectTrusted,
+          projectTrusted: scope === "project" ? true : projectTrusted,
         });
         dirty = true;
       } catch (error: unknown) {
@@ -338,20 +337,6 @@ async function openSettingsMenu(
   if (dirty) await ctx.reload();
 }
 
-async function printStatus(ctx: ExtensionCommandContext, state: KimiRuntimeState): Promise<void> {
-  const [usage] = await Promise.all([fetchKimiUsageSummary(), refreshModelExtras(state)]);
-  const lines = [
-    usage,
-    "",
-    `Protocol: ${state.config.protocol}`,
-    `Upload threshold: ${formatByteSize(state.config.uploads.thresholdBytes)}`,
-    "",
-    "Tools:",
-    ...KIMI_TOOL_NAMES.map((name) => `- ${formatToolStatus(state.config, name)}`),
-  ];
-  ctx.ui.notify(lines.join("\n"));
-}
-
 function saveScopeKimiCodeConfig(
   scope: KimiConfigScope,
   cwd: string,
@@ -436,11 +421,11 @@ export function KimiCode(overrides?: KimiCodeConfigPatch): ExtensionFactory {
     pi.registerCommand("kimi-settings", {
       description: "Show Kimi usage and configure optional Kimi tools",
       handler: async (_args, ctx) => {
-        if (ctx.mode === "tui") {
-          await openSettingsMenu(pi, ctx, state);
-        } else {
-          await printStatus(ctx, state);
+        if (ctx.mode !== "tui") {
+          ctx.ui.notify("/kimi-settings requires TUI mode", "error");
+          return;
         }
+        await openSettingsMenu(pi, ctx, state);
       },
     });
   };

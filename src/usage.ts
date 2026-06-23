@@ -108,7 +108,10 @@ export function parseUsageSummary(payload: unknown, options: UsageFormatOptions 
           ? "Current 5h window"
           : `Limit #${index + 1}`;
       const row = parseUsageRow(detail, fallbackLabel);
-      if (row) lines.push("", formatUsageRow(row, options));
+      if (row) {
+        if (lines.length > 0) lines.push("");
+        lines.push(formatUsageRow(row, options));
+      }
     }
   }
 
@@ -124,7 +127,7 @@ function formatWindowLabel(value: unknown, fallbackLabel: string): string {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return fallbackLabel;
   const record = value as Record<string, unknown>;
   const duration = toNumber(record.duration);
-  const unit = String(record.timeUnit ?? record.time_unit ?? "");
+  const unit = String(record.timeUnit ?? record.time_unit ?? "").toUpperCase();
   if (!duration || !unit) return fallbackLabel;
 
   const minutes = unit.includes("HOUR")

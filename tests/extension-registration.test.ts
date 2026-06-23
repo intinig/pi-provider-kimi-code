@@ -356,6 +356,30 @@ describe("extension tool registration", () => {
     assert.match(component.render(80).join("\n"), /https:\/\/example.com/);
   });
 
+  it("requires TUI mode for /kimi-settings", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { commands, pi } = makePi();
+    const notifications: Array<{ message: string; level?: string }> = [];
+
+    await withCwd(cwd, () => registerKimiCodeExtension(pi));
+    const kimiCommand = commands.get("kimi-settings");
+    assert.ok(kimiCommand);
+
+    await kimiCommand.handler("", {
+      cwd,
+      mode: "batch",
+      ui: {
+        notify: (message: string, level?: string) => {
+          notifications.push({ message, level });
+        },
+      },
+    } as unknown as ExtensionCommandContext);
+
+    assert.deepEqual(notifications, [
+      { message: "/kimi-settings requires TUI mode", level: "error" },
+    ]);
+  });
+
   it("shows effective tool sources in /kimi-settings", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const configPath = getProjectKimiCodeConfigPath(cwd);
@@ -559,15 +583,26 @@ describe("extension tool registration", () => {
       const kimiCommand = commands.get("kimi-settings");
       assert.ok(kimiCommand);
 
-      await kimiCommand.handler("", {
-        cwd,
-        ui: {
-          select: async () => "Done",
-          notify: (message: string) => {
-            notifications.push(message);
+      let rendered = "";
+      await runSettingsHandler(
+        kimiCommand.handler,
+        {
+          cwd,
+          mode: "tui",
+          ui: {
+            notify: (message: string) => {
+              notifications.push(message);
+            },
           },
+          reload: async () => {},
+        } as unknown as ExtensionCommandContext,
+        (list, done) => {
+          rendered = list.render(80).join("\n");
+          done();
         },
-      } as unknown as ExtensionCommandContext);
+      );
+
+      assert.match(rendered, /Current week\n  ▌\s+1% used/);
     } finally {
       globalThis.fetch = originalFetch;
       if (originalKimiApiKey === undefined) {
@@ -579,7 +614,7 @@ describe("extension tool registration", () => {
     }
 
     assert.deepEqual(usageTokens, ["Bearer stale-access", "Bearer fresh-access"]);
-    assert.match(notifications[0], /Current week\n▌\s+1% used/);
+    assert.deepEqual(notifications, []);
   });
 
   it("writes protocol and upload threshold from /kimi-settings", async () => {
@@ -638,6 +673,66 @@ describe("extension tool registration", () => {
       protocol: "anthropic",
     });
     assert.deepEqual(notifications, []);
+  });
+
+  it("preserves trusted project config when saving home scope from /kimi-settings", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const home = tempDir("kimi-extension-home");
+    const configPath = getProjectKimiCodeConfigPath(cwd);
+    mkdirSync(join(configPath, ".."), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({ tools: { moonshot_search: { enabled: true } } }),
+      "utf8",
+    );
+    const { commands, getActiveTools, pi } = makePi();
+    const originalFetch = globalThis.fetch;
+    const originalKimiApiKey = process.env.KIMI_API_KEY;
+    const originalHome = process.env.HOME;
+    process.env.KIMI_API_KEY = "test-key";
+    process.env.HOME = home;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ usage: { limit: 100, remaining: 100 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    try {
+      await withCwd(cwd, () => registerKimiCodeExtension(pi));
+      const kimiCommand = commands.get("kimi-settings");
+      assert.ok(kimiCommand);
+
+      await runSettingsHandler(
+        kimiCommand.handler,
+        {
+          cwd,
+          mode: "tui",
+          ui: { notify: () => {} },
+          reload: async () => {},
+        } as unknown as ExtensionCommandContext,
+        (list, done) => {
+          const onChange = (list as unknown as { onChange: (id: string, value: string) => void })
+            .onChange;
+          onChange("scope", "home");
+          onChange("protocol", "anthropic");
+          done();
+        },
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalKimiApiKey === undefined) {
+        delete process.env.KIMI_API_KEY;
+      } else {
+        process.env.KIMI_API_KEY = originalKimiApiKey;
+      }
+    }
+
+    assert.deepEqual(getActiveTools(), ["moonshot_search"]);
   });
 
   it("writes project config and updates active tools from /kimi-settings", async () => {

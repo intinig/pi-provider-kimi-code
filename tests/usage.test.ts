@@ -78,6 +78,19 @@ describe("parseUsageSummary", () => {
     ]);
   });
 
+  it("formats limits-only payloads without a leading blank and normalizes window units", () => {
+    const summary = parseUsageSummary({
+      limits: [
+        {
+          window: { duration: 300, timeUnit: "time_unit_minute" },
+          detail: { limit: 10, remaining: 3 },
+        },
+      ],
+    });
+
+    assert.match(summary, /^Current 5h window\n███████████████████████████████████\s+70% used$/);
+  });
+
   it("reports unavailable and empty payloads with existing messages", () => {
     assert.equal(parseUsageSummary(null), "Usage: unavailable");
     assert.equal(parseUsageSummary([]), "Usage: unavailable");
