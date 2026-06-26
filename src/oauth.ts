@@ -370,7 +370,9 @@ export async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<Kim
 export async function refreshKimiCodeToken(
   credentials: OAuthCredentials,
 ): Promise<KimiOAuthCredentials> {
-  const token = await refreshAccessToken(credentials.refresh);
+  const kimiCred = kimiCodeCredentialExists() ? readKimiCliCredentials() : null;
+  const refreshToken = kimiCred?.refresh_token ?? credentials.refresh;
+  const token = await refreshAccessToken(refreshToken);
   const expiresMs = Date.now() + token.expires_in * 1000;
   writeKimiCodeCredentials(token.access_token, token.refresh_token, expiresMs);
   const extras = await discoverKimiModelMetadata(token.access_token);
@@ -392,6 +394,16 @@ export async function refreshKimiCodeToken(
 // first auth error to force a refresh through AuthStorage (which persists the
 // new credentials under a file lock), and retry once.
 // =============================================================================
+
+export function getKimiApiKey(credentials: OAuthCredentials): string {
+  if (kimiCodeCredentialExists()) {
+    const kimiCred = readKimiCliCredentials();
+    if (kimiCred?.access_token) {
+      return kimiCred.access_token;
+    }
+  }
+  return credentials.access;
+}
 
 export function isKimiAuthErrorMessage(message: unknown): boolean {
   const text = String(message ?? "").toLowerCase();
