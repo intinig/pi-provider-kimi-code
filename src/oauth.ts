@@ -416,10 +416,7 @@ export async function refreshKimiAuthToken(currentKey: string): Promise<string |
     if (hasKimiCode && kimiCred && piOAuth) {
       const kimiExpiresMs = (kimiCred.expires_at ?? 0) * 1000;
       const piMtime = getFileMtimeMs(
-        join(
-          process.env.PI_CODING_AGENT_DIR || join(os.homedir(), ".pi", "agent"),
-          "auth.json",
-        ),
+        join(process.env.PI_CODING_AGENT_DIR || join(os.homedir(), ".pi", "agent"), "auth.json"),
       );
       const kimiMtime = getFileMtimeMs(getKimiCodeCredentialPath());
 
