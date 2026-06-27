@@ -372,7 +372,16 @@ export async function refreshKimiCodeToken(
 ): Promise<KimiOAuthCredentials> {
   const kimiCred = kimiCodeCredentialExists() ? readKimiCliCredentials() : null;
   const refreshToken = kimiCred?.refresh_token ?? credentials.refresh;
-  const token = await refreshAccessToken(refreshToken);
+  let token: Awaited<ReturnType<typeof refreshAccessToken>>;
+  try {
+    token = await refreshAccessToken(refreshToken);
+  } catch (error) {
+    if (refreshToken !== credentials.refresh) {
+      token = await refreshAccessToken(credentials.refresh);
+    } else {
+      throw error;
+    }
+  }
   const expiresMs = Date.now() + token.expires_in * 1000;
   writeKimiCodeCredentials(token.access_token, token.refresh_token, expiresMs);
   const extras = await discoverKimiModelMetadata(token.access_token);
@@ -399,7 +408,10 @@ export function getKimiApiKey(credentials: OAuthCredentials): string {
   if (kimiCodeCredentialExists()) {
     const kimiCred = readKimiCliCredentials();
     if (kimiCred?.access_token) {
-      return kimiCred.access_token;
+      const expiresMs = (kimiCred.expires_at ?? 0) * 1000;
+      if (Date.now() < expiresMs) {
+        return kimiCred.access_token;
+      }
     }
   }
   return credentials.access;
