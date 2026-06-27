@@ -47,7 +47,7 @@ import {
   discoverKimiModelMetadata,
   resolveKimiModelConfig,
 } from "./src/models.ts";
-import { loginKimiCode, refreshKimiCodeToken } from "./src/oauth.ts";
+import { getKimiApiKey, loginKimiCode, refreshKimiCodeToken } from "./src/oauth.ts";
 import { isKimiProjectConfigApproved } from "./src/project-trust.ts";
 import {
   type KimiConfigScope,
@@ -372,7 +372,7 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
       name: "Kimi Code (OAuth)",
       login: loginKimiCode,
       refreshToken: refreshKimiCodeToken,
-      getApiKey: (cred) => cred.access,
+      getApiKey: getKimiApiKey,
       // Reflect server-side model identity on the registered model after login
       // / refresh. We never rewrite the model id (pi-side `/model` selections
       // and persisted sessions reference it); only the human-facing name, the

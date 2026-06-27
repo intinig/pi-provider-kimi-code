@@ -2,9 +2,9 @@
 // reuse, the login / refresh handlers wired into pi's OAuth interface, and
 // the stream-level auth refresh used by the streaming handler.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import type { OAuthCredential } from "@earendil-works/pi-coding-agent";
@@ -196,15 +196,19 @@ interface KimiCliCredentialsFile {
   access_token?: string;
   refresh_token?: string;
   expires_at?: number; // Unix seconds (upstream convention)
+  scope?: string;
+  token_type?: string;
+  expires_in?: number;
+}
+
+function getKimiCodeCredentialPath(): string {
+  const kimiCodeHome = process.env.KIMI_CODE_HOME || join(os.homedir(), ".kimi-code");
+  return join(kimiCodeHome, "credentials", "kimi-code.json");
 }
 
 function getKimiCredentialPaths(): string[] {
-  const kimiCodeHome = process.env.KIMI_CODE_HOME || join(os.homedir(), ".kimi-code");
   const shareDir = process.env.KIMI_SHARE_DIR || join(os.homedir(), ".kimi");
-  return [
-    join(kimiCodeHome, "credentials", "kimi-code.json"),
-    join(shareDir, "credentials", "kimi-code.json"),
-  ];
+  return [getKimiCodeCredentialPath(), join(shareDir, "credentials", "kimi-code.json")];
 }
 
 function readKimiCliCredentials(): KimiCliCredentialsFile | null {
@@ -219,6 +223,33 @@ function readKimiCliCredentials(): KimiCliCredentialsFile | null {
     }
   }
   return null;
+}
+
+function kimiCodeCredentialExists(): boolean {
+  return existsSync(getKimiCodeCredentialPath());
+}
+
+function writeKimiCodeCredentials(access: string, refresh: string, expiresMs: number): void {
+  const path = getKimiCodeCredentialPath();
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  const data: KimiCliCredentialsFile = {
+    access_token: access,
+    refresh_token: refresh,
+    expires_at: Math.floor(expiresMs / 1000),
+    scope: "",
+    token_type: "Bearer",
+    expires_in: Math.max(0, Math.floor((expiresMs - Date.now()) / 1000)),
+  };
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+}
+
+function getFileMtimeMs(path: string): number {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 async function tryReuseKimiCliCredentials(
@@ -247,11 +278,13 @@ async function tryReuseKimiCliCredentials(
   callbacks.onProgress?.("Kimi access token expired, refreshing.");
   try {
     const token = await refreshAccessToken(data.refresh_token!);
+    const expiresMs = Date.now() + token.expires_in * 1000;
+    writeKimiCodeCredentials(token.access_token, token.refresh_token, expiresMs);
     const extras = await discoverKimiModelMetadata(token.access_token);
     return {
       access: token.access_token,
       refresh: token.refresh_token,
-      expires: Date.now() + token.expires_in * 1000,
+      expires: expiresMs,
       ...extras,
     };
   } catch {
@@ -319,11 +352,13 @@ export async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<Kim
     }
 
     if (token) {
+      const expiresMs = Date.now() + token.expires_in * 1000;
+      writeKimiCodeCredentials(token.access_token, token.refresh_token, expiresMs);
       const extras = await discoverKimiModelMetadata(token.access_token);
       return {
         access: token.access_token,
         refresh: token.refresh_token,
-        expires: Date.now() + token.expires_in * 1000,
+        expires: expiresMs,
         ...extras,
       };
     }
@@ -335,12 +370,25 @@ export async function loginKimiCode(callbacks: OAuthLoginCallbacks): Promise<Kim
 export async function refreshKimiCodeToken(
   credentials: OAuthCredentials,
 ): Promise<KimiOAuthCredentials> {
-  const token = await refreshAccessToken(credentials.refresh);
+  const kimiCred = kimiCodeCredentialExists() ? readKimiCliCredentials() : null;
+  const refreshToken = kimiCred?.refresh_token ?? credentials.refresh;
+  let token: Awaited<ReturnType<typeof refreshAccessToken>>;
+  try {
+    token = await refreshAccessToken(refreshToken);
+  } catch (error) {
+    if (refreshToken !== credentials.refresh) {
+      token = await refreshAccessToken(credentials.refresh);
+    } else {
+      throw error;
+    }
+  }
+  const expiresMs = Date.now() + token.expires_in * 1000;
+  writeKimiCodeCredentials(token.access_token, token.refresh_token, expiresMs);
   const extras = await discoverKimiModelMetadata(token.access_token);
   return {
     access: token.access_token,
     refresh: token.refresh_token,
-    expires: Date.now() + token.expires_in * 1000,
+    expires: expiresMs,
     ...extras,
   };
 }
@@ -356,6 +404,19 @@ export async function refreshKimiCodeToken(
 // new credentials under a file lock), and retry once.
 // =============================================================================
 
+export function getKimiApiKey(credentials: OAuthCredentials): string {
+  if (kimiCodeCredentialExists()) {
+    const kimiCred = readKimiCliCredentials();
+    if (kimiCred?.access_token) {
+      const expiresMs = (kimiCred.expires_at ?? 0) * 1000;
+      if (Date.now() < expiresMs) {
+        return kimiCred.access_token;
+      }
+    }
+  }
+  return credentials.access;
+}
+
 export function isKimiAuthErrorMessage(message: unknown): boolean {
   const text = String(message ?? "").toLowerCase();
   return (
@@ -368,31 +429,90 @@ export function isKimiAuthErrorMessage(message: unknown): boolean {
 
 export async function refreshKimiAuthToken(currentKey: string): Promise<string | null> {
   try {
+    const kimiCred = readKimiCliCredentials();
+    const hasKimiCode = kimiCodeCredentialExists();
+
     const storage = AuthStorage.create();
-    const cred = storage.get(PROVIDER_ID);
-    if (!cred || cred.type !== "oauth") {
+    const piCred = storage.get(PROVIDER_ID);
+    const piOAuth = piCred?.type === "oauth" ? piCred : null;
+
+    // Merge: when both sources exist, pick the newer one and sync to kimi-code
+    if (hasKimiCode && kimiCred && piOAuth) {
+      const kimiExpiresMs = (kimiCred.expires_at ?? 0) * 1000;
+      const piMtime = getFileMtimeMs(
+        join(process.env.PI_CODING_AGENT_DIR || join(os.homedir(), ".pi", "agent"), "auth.json"),
+      );
+      const kimiMtime = getFileMtimeMs(getKimiCodeCredentialPath());
+
+      if (piMtime > kimiMtime && piOAuth.access !== kimiCred.access_token) {
+        writeKimiCodeCredentials(piOAuth.access, piOAuth.refresh, piOAuth.expires);
+        kimiCred.access_token = piOAuth.access;
+        kimiCred.refresh_token = piOAuth.refresh;
+        kimiCred.expires_at = Math.floor(piOAuth.expires / 1000);
+        console.error("[kimi-coding] auth merge: synced newer pi credentials to kimi-code");
+      } else if (kimiMtime > piMtime && kimiCred.access_token !== piOAuth.access) {
+        const merged: OAuthCredential = {
+          ...piOAuth,
+          type: "oauth",
+          access: kimiCred.access_token!,
+          refresh: kimiCred.refresh_token!,
+          expires: kimiExpiresMs,
+        };
+        storage.set(PROVIDER_ID, merged);
+        console.error("[kimi-coding] auth merge: synced newer kimi-code credentials to pi");
+      }
+    }
+
+    // Prefer kimi-code credentials when available
+    if (hasKimiCode && kimiCred) {
+      const expiresMs = (kimiCred.expires_at ?? 0) * 1000;
+
+      if (kimiCred.access_token !== currentKey && Date.now() < expiresMs) {
+        console.error("[kimi-coding] auth refresh: reusing newer kimi-code token");
+        return kimiCred.access_token!;
+      }
+
+      console.error("[kimi-coding] auth refresh: requesting new access token via kimi-code");
+      const refreshed = await refreshAccessToken(kimiCred.refresh_token!);
+      const newExpiresMs = Date.now() + refreshed.expires_in * 1000;
+      writeKimiCodeCredentials(refreshed.access_token, refreshed.refresh_token, newExpiresMs);
+
+      if (piOAuth) {
+        storage.set(PROVIDER_ID, {
+          ...piOAuth,
+          type: "oauth",
+          access: refreshed.access_token,
+          refresh: refreshed.refresh_token,
+          expires: newExpiresMs,
+        });
+      }
+
+      console.error("[kimi-coding] auth refresh: new token persisted to kimi-code");
+      return refreshed.access_token;
+    }
+
+    // Fall back to pi AuthStorage
+    if (!piOAuth) {
       console.error(
         `[kimi-coding] auth refresh skipped: no OAuth credentials for ${PROVIDER_ID} on disk`,
       );
       return null;
     }
 
-    // If disk already has a different valid token (e.g., another process or a
-    // previous retry refreshed it while the caller's in-memory cache went
-    // stale), reuse it without hitting the OAuth endpoint.
-    if (cred.access !== currentKey && Date.now() < cred.expires) {
+    if (piOAuth.access !== currentKey && Date.now() < piOAuth.expires) {
       console.error("[kimi-coding] auth refresh: reusing newer on-disk token");
-      return cred.access;
+      return piOAuth.access;
     }
 
     console.error("[kimi-coding] auth refresh: requesting new access token");
-    const refreshed = await refreshAccessToken(cred.refresh);
+    const refreshed = await refreshAccessToken(piOAuth.refresh);
+    const newExpiresMs = Date.now() + refreshed.expires_in * 1000;
     const newCred: OAuthCredential = {
-      ...cred,
+      ...piOAuth,
       type: "oauth",
       access: refreshed.access_token,
       refresh: refreshed.refresh_token,
-      expires: Date.now() + refreshed.expires_in * 1000,
+      expires: newExpiresMs,
     };
     storage.set(PROVIDER_ID, newCred);
     console.error("[kimi-coding] auth refresh: new token persisted");

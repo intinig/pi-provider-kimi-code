@@ -69,7 +69,11 @@ function withTempAuthFile(credential: Record<string, unknown>) {
   const dir = tempDir("pi-kimi-auth");
   writeFileSync(join(dir, "auth.json"), JSON.stringify({ [PROVIDER_ID]: credential }), "utf8");
   const originalDir = process.env.PI_CODING_AGENT_DIR;
+  const originalKimiCodeHome = process.env.KIMI_CODE_HOME;
+  const originalKimiShareDir = process.env.KIMI_SHARE_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.KIMI_CODE_HOME = join(dir, "no-kimi-code");
+  process.env.KIMI_SHARE_DIR = join(dir, "no-kimi-share");
   return {
     cleanup() {
       rmSync(dir, { recursive: true, force: true });
@@ -77,6 +81,16 @@ function withTempAuthFile(credential: Record<string, unknown>) {
         delete process.env.PI_CODING_AGENT_DIR;
       } else {
         process.env.PI_CODING_AGENT_DIR = originalDir;
+      }
+      if (originalKimiCodeHome === undefined) {
+        delete process.env.KIMI_CODE_HOME;
+      } else {
+        process.env.KIMI_CODE_HOME = originalKimiCodeHome;
+      }
+      if (originalKimiShareDir === undefined) {
+        delete process.env.KIMI_SHARE_DIR;
+      } else {
+        process.env.KIMI_SHARE_DIR = originalKimiShareDir;
       }
     },
   };
