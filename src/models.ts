@@ -207,7 +207,7 @@ export async function discoverKimiModelMetadata(
     if (!preferred) {
       return Object.keys(modelCatalog).length > 0 ? { modelCatalog } : {};
     }
-    return Object.keys(modelCatalog).length > 1 ? { ...preferred, modelCatalog } : preferred;
+    return { ...preferred, modelCatalog };
   } catch {
     return {};
   } finally {

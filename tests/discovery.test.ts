@@ -215,10 +215,15 @@ describe("discoverKimiModelMetadata", () => {
     assert.equal(result.supportsReasoning, true);
   });
 
-  it("omits optional fields when the server does not provide them", async () => {
+  it("marks a fresh standard-only catalog so unavailable models can be removed", async () => {
     mock = mockFetch(() => jsonResponse({ data: [{ id: "kimi-for-coding" }] }));
     const result = await discoverKimiModelMetadata("tok-1");
-    assert.deepEqual(result, { wireModelId: "kimi-for-coding" });
+    assert.deepEqual(result, {
+      wireModelId: "kimi-for-coding",
+      modelCatalog: {
+        "kimi-for-coding": { wireModelId: "kimi-for-coding" },
+      },
+    });
   });
 
   it("respects KIMI_CODE_BASE_URL when computing the discovery endpoint", async () => {
