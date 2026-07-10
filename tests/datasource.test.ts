@@ -207,6 +207,29 @@ describe("kimi_datasource datasource", () => {
     assert.match(text, /\[kimi-datasource\] tool-call-id: tool-call-1/);
   });
 
+  it("regression: prompts for login when token refresh cannot recover from 401", async () => {
+    const tool = buildKimiDatasourceTool({
+      deps: {
+        fetch: async () => new Response("expired", { status: 401 }),
+        getAccessToken: () => "revoked-token",
+        refreshAccessToken: async () => null,
+      },
+    });
+
+    const result = await tool.execute(
+      "tool-call-1",
+      { data_source_name: "arxiv" },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+
+    assert.equal(
+      resultText(result),
+      "kimi_datasource failed: Kimi Code authorization is no longer valid. Sign in again with /login kimi-coding.",
+    );
+  });
+
   it("uses KIMI_DATASOURCE_API_URL when provided", async () => {
     const original = process.env.KIMI_DATASOURCE_API_URL;
     const calls: Array<{ url: string; init: RequestInit }> = [];

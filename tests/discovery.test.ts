@@ -11,9 +11,11 @@ import {
   resolveKimiModelConfig,
 } from "../src/models.ts";
 import {
+  getKimiApiKey,
   isKimiAuthErrorMessage,
   refreshAccessToken,
   refreshKimiAuthToken,
+  refreshKimiCodeToken,
   requestDeviceAuthorization,
   requestDeviceToken,
 } from "../src/oauth.ts";
@@ -478,26 +480,42 @@ describe("refreshAccessToken", () => {
       refreshAccessToken("refresh-1", {
         sleep: async () => {},
       }),
-      /Token refresh unauthorized: revoked/,
+      /Kimi Code authorization is no longer valid/,
     );
     assert.equal(attempts, 1);
   });
 });
 
 describe("refreshKimiAuthToken", () => {
-  function withTempAuthFile(credential: Record<string, unknown>) {
+  function withTempAuthFile(
+    credential: Record<string, unknown>,
+    kimiCredential?: Record<string, unknown>,
+  ) {
     const dir = mkdtempSync(join(tmpdir(), "pi-kimi-auth-"));
+    const kimiHome = join(dir, "kimi-code");
+    const kimiCredentialPath = join(kimiHome, "credentials", "kimi-code.json");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "auth.json"), JSON.stringify({ [PROVIDER_ID]: credential }), "utf8");
+    if (kimiCredential) {
+      mkdirSync(join(kimiHome, "credentials"), { recursive: true });
+      writeFileSync(kimiCredentialPath, JSON.stringify(kimiCredential), "utf8");
+    }
     process.env.PI_CODING_AGENT_DIR = dir;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    process.env.KIMI_SHARE_DIR = join(dir, "no-legacy-credentials");
     return {
       dir,
       readCredential() {
         return JSON.parse(readFileSync(join(dir, "auth.json"), "utf8"))[PROVIDER_ID];
       },
+      readKimiCredential() {
+        return JSON.parse(readFileSync(kimiCredentialPath, "utf8"));
+      },
       cleanup() {
         rmSync(dir, { recursive: true, force: true });
         delete process.env.PI_CODING_AGENT_DIR;
+        delete process.env.KIMI_CODE_HOME;
+        delete process.env.KIMI_SHARE_DIR;
       },
     };
   }
@@ -550,6 +568,171 @@ describe("refreshKimiAuthToken", () => {
       assert.equal(stored.wireModelId, "kimi-for-coding");
       assert.equal(stored.modelDisplay, "Kimi For Coding");
     } finally {
+      auth.cleanup();
+    }
+  });
+
+  it("regression: uses Pi credentials as the canonical runtime access token", () => {
+    const auth = withTempAuthFile(
+      {
+        type: "oauth",
+        access: "pi-access",
+        refresh: "pi-refresh",
+        expires: Date.now() + 60_000,
+      },
+      {
+        access_token: "stale-kimi-access",
+        refresh_token: "stale-kimi-refresh",
+        expires_at: Math.floor(Date.now() / 1000) + 60,
+      },
+    );
+
+    try {
+      assert.equal(
+        getKimiApiKey({
+          access: "pi-access",
+          refresh: "pi-refresh",
+          expires: Date.now() + 60_000,
+        }),
+        "pi-access",
+      );
+    } finally {
+      auth.cleanup();
+    }
+  });
+
+  it("regression: uses Pi credentials as the canonical proactive-refresh source", async () => {
+    const auth = withTempAuthFile(
+      {
+        type: "oauth",
+        access: "pi-stale-access",
+        refresh: "pi-valid-refresh",
+        expires: Date.now() - 1,
+      },
+      {
+        access_token: "kimi-stale-access",
+        refresh_token: "kimi-revoked-refresh",
+        expires_at: 1,
+      },
+    );
+    const refreshTokens: string[] = [];
+    mock = mockFetch(({ url, init }) => {
+      if (url.endsWith("/models")) return jsonResponse({ data: [] });
+      const body = new URLSearchParams(String(init?.body));
+      refreshTokens.push(body.get("refresh_token") ?? "");
+      assert.equal(body.get("refresh_token"), "pi-valid-refresh");
+      return jsonResponse({
+        access_token: "fresh-access",
+        refresh_token: "fresh-refresh",
+        expires_in: 900,
+        scope: "kimi-code",
+        token_type: "Bearer",
+      });
+    });
+
+    try {
+      const result = await refreshKimiCodeToken({
+        access: "pi-stale-access",
+        refresh: "pi-valid-refresh",
+        expires: Date.now() - 1,
+      });
+
+      assert.equal(result.access, "fresh-access");
+      assert.deepEqual(refreshTokens, ["pi-valid-refresh"]);
+      assert.equal(auth.readKimiCredential().refresh_token, "fresh-refresh");
+    } finally {
+      auth.cleanup();
+    }
+  });
+
+  it("regression: uses Pi credentials as the canonical forced-refresh source", async () => {
+    const auth = withTempAuthFile(
+      {
+        type: "oauth",
+        access: "shared-stale-access",
+        refresh: "pi-valid-refresh",
+        expires: Date.now() - 1,
+      },
+      {
+        access_token: "shared-stale-access",
+        refresh_token: "kimi-revoked-refresh",
+        expires_at: 1,
+      },
+    );
+
+    const refreshTokens: string[] = [];
+    mock = mockFetch(({ init }) => {
+      const body = new URLSearchParams(String(init?.body));
+      refreshTokens.push(body.get("refresh_token") ?? "");
+      if (body.get("refresh_token") === "kimi-revoked-refresh") {
+        return jsonResponse(
+          {
+            error: "invalid_grant",
+            error_description: "The provided authorization grant is invalid",
+          },
+          400,
+        );
+      }
+      assert.equal(body.get("refresh_token"), "pi-valid-refresh");
+      return jsonResponse({
+        access_token: "fresh-access",
+        refresh_token: "fresh-refresh",
+        expires_in: 900,
+        scope: "kimi-code",
+        token_type: "Bearer",
+      });
+    });
+
+    try {
+      const result = await refreshKimiAuthToken("shared-stale-access");
+
+      assert.equal(result, "fresh-access");
+      assert.deepEqual(refreshTokens, ["pi-valid-refresh"]);
+      assert.equal(auth.readCredential().refresh, "fresh-refresh");
+      assert.equal(auth.readKimiCredential().refresh_token, "fresh-refresh");
+    } finally {
+      auth.cleanup();
+    }
+  });
+
+  it("regression: replaces invalid_grant details with an actionable login message", async () => {
+    const auth = withTempAuthFile(
+      {
+        type: "oauth",
+        access: "revoked-access",
+        refresh: "revoked-refresh",
+        expires: Date.now() - 1,
+      },
+      {
+        access_token: "revoked-access",
+        refresh_token: "revoked-refresh",
+        expires_at: 1,
+      },
+    );
+    mock = mockFetch(() =>
+      jsonResponse(
+        {
+          error: "invalid_grant",
+          error_description: "The provided authorization grant is invalid",
+        },
+        400,
+      ),
+    );
+    const originalError = console.error;
+    const logs: string[] = [];
+    console.error = (...args: unknown[]) => logs.push(args.map(String).join(" "));
+
+    try {
+      const result = await refreshKimiAuthToken("revoked-access");
+
+      assert.equal(result, null);
+      assert.equal(
+        logs.at(-1),
+        "[kimi-coding] Kimi Code authorization is no longer valid. Sign in again with /login kimi-coding.",
+      );
+      assert.doesNotMatch(logs.join("\n"), /400|invalid_grant|authorization grant/i);
+    } finally {
+      console.error = originalError;
       auth.cleanup();
     }
   });

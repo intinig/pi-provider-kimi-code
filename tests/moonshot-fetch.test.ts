@@ -130,6 +130,29 @@ describe("moonshot_fetch", () => {
     });
   });
 
+  it("regression: prompts for login when token refresh cannot recover from 401", async () => {
+    const tool = buildMoonshotFetchTool({
+      deps: {
+        fetch: async () => new Response("expired", { status: 401 }),
+        getAccessToken: () => "revoked-token",
+        refreshAccessToken: async () => null,
+      },
+    });
+
+    const result = await tool.execute(
+      "tool-call-2",
+      { url: "https://example.com/page" },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+
+    assert.equal(
+      result.content[0]?.type === "text" ? result.content[0].text : "",
+      "Moonshot fetch failed: Kimi Code authorization is no longer valid. Sign in again with /login kimi-coding.",
+    );
+  });
+
   it("returns an error result when OAuth credentials are missing", async () => {
     const tool = buildMoonshotFetchTool({
       deps: {
