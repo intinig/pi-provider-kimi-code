@@ -17,20 +17,6 @@ import {
 
 export const moonshotSearchSchema = Type.Object({
   query: Type.String({ description: "The query text to search for." }),
-  limit: Type.Optional(
-    Type.Number({
-      description: "The number of results to return.",
-      default: 5,
-      minimum: 1,
-      maximum: 20,
-    }),
-  ),
-  include_content: Type.Optional(
-    Type.Boolean({
-      description: "Whether to include fetched page content in the search results.",
-      default: false,
-    }),
-  ),
 });
 
 export const moonshotFetchSchema = Type.Object({
@@ -44,17 +30,13 @@ export interface MoonshotSearchResult {
   url: string;
   title: string;
   snippet: string;
-  content?: string;
+  date?: string;
+  siteName?: string;
 }
 
 export interface MoonshotFetchResult {
   url: string;
   content: string;
-}
-
-function clampLimit(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-  return Math.max(1, Math.min(20, Math.trunc(value)));
 }
 
 interface MoonshotSearchResponse {
@@ -66,7 +48,7 @@ function stringField(record: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function mapSearchResults(value: unknown, includeContent: boolean): MoonshotSearchResult[] {
+function mapSearchResults(value: unknown): MoonshotSearchResult[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
@@ -76,9 +58,10 @@ function mapSearchResults(value: unknown, includeContent: boolean): MoonshotSear
         title: stringField(item, "title"),
         snippet: stringField(item, "snippet"),
       };
-      if (includeContent) {
-        result.content = stringField(item, "content");
-      }
+      const date = stringField(item, "date");
+      if (date) result.date = date;
+      const siteName = stringField(item, "site_name");
+      if (siteName) result.siteName = siteName;
       return result;
     });
 }
@@ -130,8 +113,10 @@ export function buildMoonshotSearchTool(options: BuildKimiToolOptions = {}) {
   return defineTool({
     name: "moonshot_search",
     label: "Moonshot Search",
-    description: "Search the web through Kimi Coding's server-side Moonshot search service.",
-    promptSnippet: "Search the web with Kimi Coding's Moonshot search service",
+    description:
+      "Search the web through Kimi Coding. Results are summaries; use moonshot_fetch to read relevant pages.",
+    promptSnippet:
+      "Search the web with Kimi Coding, then fetch the few relevant result URLs before answering",
     parameters: moonshotSearchSchema,
 
     async execute(toolCallId, params, signal) {
@@ -142,20 +127,13 @@ export function buildMoonshotSearchTool(options: BuildKimiToolOptions = {}) {
         );
       }
 
-      const limit = clampLimit(params.limit);
-      const includeContent = params.include_content === true;
       const timeout = buildTimeoutSignal(signal);
       try {
         const response = await fetchWithAuthRetry(deps, accessToken, (token) =>
           deps.fetch(`${getKimiBaseV1()}/search`, {
             method: "POST",
             headers: buildHeaders(token, toolCallId),
-            body: JSON.stringify({
-              text_query: params.query,
-              limit,
-              enable_page_crawling: includeContent,
-              timeout_seconds: 30,
-            }),
+            body: JSON.stringify({ text_query: params.query }),
             signal: timeout.signal,
           }),
         );
@@ -168,7 +146,7 @@ export function buildMoonshotSearchTool(options: BuildKimiToolOptions = {}) {
         }
 
         const data = (await response.json()) as MoonshotSearchResponse;
-        const results = mapSearchResults(data.search_results, includeContent);
+        const results = mapSearchResults(data.search_results);
         return {
           content: [{ type: "text", text: searchResultsText(results) }],
           details: results,
