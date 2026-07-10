@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import { DEFAULT_KIMI_CODE_CONFIG, type KimiResolvedModelConfig } from "../src/config.ts";
 import {
   applyKimiPayloadMutations,
@@ -13,6 +13,8 @@ import {
   filterEmptyResponseStream,
   mergeKimiRequestHeaders,
   resolveKimiApiKey,
+  setStoreResolvedKimiConfig,
+  streamSimpleKimi,
 } from "../src/stream.ts";
 
 const defaultModelConfig: KimiResolvedModelConfig = { ...DEFAULT_KIMI_CODE_CONFIG.model };
@@ -293,7 +295,7 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.tool_choice, "auto");
   });
 
-  it("merges reasoning type into existing thinking fields at top level", async () => {
+  it("omits effort when the model does not advertise supported efforts", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
       extra_body: { thinking: { keep: "all" } },
@@ -301,9 +303,26 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(payload, baseCtx({ reasoning: "high" }));
 
-    assert.equal(payload.reasoning_effort, "high");
+    assert.equal(payload.reasoning_effort, undefined);
     assert.equal(payload.extra_body, undefined);
     assert.deepEqual(payload.thinking, { keep: "all", type: "enabled" });
+  });
+
+  it("sends effort inside thinking when the model advertises it", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({
+        reasoning: "high",
+        modelConfig: { ...defaultModelConfig, supportEfforts: ["low", "high"] },
+      }),
+    );
+
+    assert.equal(payload.reasoning_effort, undefined);
+    assert.deepEqual(payload.thinking, { type: "enabled", effort: "high", keep: "all" });
   });
 
   it("applies thinkingKeep only when reasoning is enabled", async () => {
@@ -318,6 +337,7 @@ describe("applyKimiPayloadMutations", () => {
 
     const disabledPayload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
+      extra_body: { thinking: { keep: "all" } },
     };
     await applyKimiPayloadMutations(
       disabledPayload,
@@ -354,7 +374,44 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.max_completion_tokens, undefined);
   });
 
-  it("lets model config maxCompletionTokens override payload max_tokens", async () => {
+  it("caps Anthropic max_tokens without adding OpenAI fields", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 64000,
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({
+        api: "anthropic-messages",
+        modelConfig: { ...defaultModelConfig, generation: { maxCompletionTokens: 32000 } },
+      }),
+    );
+
+    assert.equal(payload.max_tokens, 32000);
+    assert.equal(payload.max_completion_tokens, undefined);
+  });
+
+  it("preserves a lower Anthropic output cap supplied through extra_body", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      extra_body: { max_tokens: 128 },
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({
+        api: "anthropic-messages",
+        modelConfig: { ...defaultModelConfig, generation: { maxCompletionTokens: 32000 } },
+      }),
+    );
+
+    assert.equal(payload.extra_body, undefined);
+    assert.equal(payload.max_tokens, 128);
+    assert.equal(payload.max_completion_tokens, undefined);
+  });
+
+  it("keeps the lower request-time output cap when config sets a larger maximum", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
       max_tokens: 128,
@@ -369,12 +426,27 @@ describe("applyKimiPayloadMutations", () => {
     );
 
     assert.equal(payload.max_tokens, undefined);
-    assert.equal(payload.max_completion_tokens, 32000);
+    assert.equal(payload.max_completion_tokens, 128);
+
+    const largerPayload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      max_completion_tokens: 64000,
+    };
+    await applyKimiPayloadMutations(
+      largerPayload,
+      baseCtx({
+        api: "openai-completions",
+        modelConfig: { ...defaultModelConfig, generation: { maxCompletionTokens: 32000 } },
+      }),
+    );
+    assert.equal(largerPayload.max_completion_tokens, 32000);
   });
 
   it("suppresses reasoning fields when supportsThinkingType is 'no'", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
+      reasoning_effort: "high",
+      thinking: { type: "enabled", effort: "high" },
     };
 
     await applyKimiPayloadMutations(
@@ -402,7 +474,7 @@ describe("applyKimiPayloadMutations", () => {
       }),
     );
 
-    assert.equal(payload.reasoning_effort, "low");
+    assert.equal(payload.reasoning_effort, undefined);
     assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
   });
 
@@ -419,7 +491,7 @@ describe("applyKimiPayloadMutations", () => {
       }),
     );
 
-    assert.equal(payload.reasoning_effort, "high");
+    assert.equal(payload.reasoning_effort, undefined);
     assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
   });
 
@@ -430,11 +502,18 @@ describe("applyKimiPayloadMutations", () => {
 
     await applyKimiPayloadMutations(
       payload,
-      baseCtx({ modelConfig: { ...defaultModelConfig, supportsThinkingType: "only" } }),
+      baseCtx({
+        modelConfig: {
+          ...defaultModelConfig,
+          supportsThinkingType: "only",
+          supportEfforts: ["medium", "high"],
+          defaultEffort: "high",
+        },
+      }),
     );
 
-    assert.equal(payload.reasoning_effort, "low");
-    assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
+    assert.equal(payload.reasoning_effort, undefined);
+    assert.deepEqual(payload.thinking, { type: "enabled", effort: "high", keep: "all" });
   });
 
   it("behaves normally when supportsThinkingType is 'both'", async () => {
@@ -450,7 +529,7 @@ describe("applyKimiPayloadMutations", () => {
       }),
     );
 
-    assert.equal(payload.reasoning_effort, "high");
+    assert.equal(payload.reasoning_effort, undefined);
     assert.deepEqual(payload.thinking, { type: "enabled", keep: "all" });
   });
 });
@@ -515,6 +594,69 @@ async function collectAsyncIterable<T>(iterable: AsyncIterable<T>): Promise<T[]>
   for await (const item of iterable) out.push(item);
   return out;
 }
+
+describe("streamSimpleKimi", () => {
+  const streamModel = (overrides: Partial<Model<Api>> = {}): Model<Api> =>
+    ({
+      id: "kimi-for-coding-highspeed",
+      name: "Kimi for Coding High Speed",
+      api: "anthropic-messages",
+      provider: "kimi-coding",
+      baseUrl: "https://example.invalid",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 262144,
+      maxTokens: 32000,
+      ...overrides,
+    }) as Model<Api>;
+
+  const capturePayload = async (model: Model<Api>): Promise<JsonRecord> => {
+    let captured: JsonRecord | undefined;
+    const stream = streamSimpleKimi(
+      model,
+      { messages: [] },
+      {
+        apiKey: "test-key",
+        reasoning: "high",
+        onPayload: (payload) => {
+          captured = payload as JsonRecord;
+          throw new Error("payload captured");
+        },
+      },
+    );
+    await collectAsyncIterable(stream);
+    assert.ok(captured);
+    return captured;
+  };
+
+  it("uses the selected model's disabled reasoning capability at request time", async () => {
+    setStoreResolvedKimiConfig({
+      model: { ...defaultModelConfig, reasoning: true, supportsThinkingType: "only" },
+      protocol: "anthropic",
+      uploads: DEFAULT_KIMI_CODE_CONFIG.uploads,
+    });
+
+    const payload = await capturePayload(streamModel({ reasoning: false }));
+
+    assert.equal(payload.thinking, undefined);
+  });
+
+  it("uses the selected model's thinking capability instead of the standard model's", async () => {
+    setStoreResolvedKimiConfig({
+      model: { ...defaultModelConfig, reasoning: false, supportsThinkingType: "no" },
+      protocol: "anthropic",
+      uploads: DEFAULT_KIMI_CODE_CONFIG.uploads,
+    });
+    const model = streamModel() as Model<Api> & { supportsThinkingType?: "only" };
+    model.supportsThinkingType = "only";
+
+    const payload = await capturePayload(model);
+
+    assert.equal((payload.thinking as JsonRecord).type, "enabled");
+    assert.equal((payload.thinking as JsonRecord).keep, "all");
+  });
+});
 
 describe("filterEmptyResponseStream", () => {
   it("suppresses Kimi empty-response text blocks and cleans the final message", async () => {

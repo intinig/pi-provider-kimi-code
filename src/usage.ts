@@ -1,7 +1,7 @@
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
 import { PROVIDER_ID, getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 import { refreshKimiAuthToken } from "./oauth.ts";
 
 const MEMBERSHIP_LEVEL_NAMES: Record<string, string> = {
@@ -36,6 +36,16 @@ export interface UsageFormatOptions {
   timeZone?: string;
 }
 
+interface BoosterWalletInfo {
+  balanceCents: bigint;
+  monthlyChargeLimitEnabled: boolean;
+  monthlyChargeLimitCents: bigint;
+  monthlyUsedCents: bigint;
+  currency: string;
+}
+
+const FIXED_POINT_CENTS = 1_000_000n;
+
 export function getKimiUsageToken(): string | null {
   const credential = AuthStorage.create().get(PROVIDER_ID);
   if (credential?.type === "oauth" && credential.access) return credential.access;
@@ -60,6 +70,82 @@ function getResetTime(record: Record<string, unknown>): string | undefined {
     if (value) return value;
   }
   return undefined;
+}
+
+function toBigInt(value: unknown): bigint | null {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+  return null;
+}
+
+function fixedPointToCents(value: bigint): bigint {
+  if (value > 0n && value < FIXED_POINT_CENTS) return 1n;
+  return (value + FIXED_POINT_CENTS / 2n) / FIXED_POINT_CENTS;
+}
+
+function parseMoney(value: unknown): { cents: bigint; currency: string } | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const cents = toBigInt(record.priceInCents);
+  if (cents === null) return null;
+  return {
+    cents,
+    currency: typeof record.currency === "string" ? record.currency : "",
+  };
+}
+
+function parseBoosterWallet(value: unknown): BoosterWalletInfo | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const balance = record.balance;
+  if (typeof balance !== "object" || balance === null || Array.isArray(balance)) return null;
+  const balanceRecord = balance as Record<string, unknown>;
+  if (balanceRecord.type !== "BOOSTER") return null;
+  const amount = toBigInt(balanceRecord.amount);
+  if (amount === null || amount < 0n) return null;
+
+  const amountLeft = toBigInt(balanceRecord.amountLeft);
+  const monthlyLimit = parseMoney(record.monthlyChargeLimit);
+  const monthlyUsed = parseMoney(record.monthlyUsed);
+  return {
+    balanceCents: amountLeft === null ? 0n : fixedPointToCents(amountLeft),
+    monthlyChargeLimitEnabled: record.monthlyChargeLimitEnabled === true,
+    monthlyChargeLimitCents: monthlyLimit?.cents ?? 0n,
+    monthlyUsedCents: monthlyUsed?.cents ?? 0n,
+    currency: monthlyLimit?.currency || monthlyUsed?.currency || "USD",
+  };
+}
+
+function formatCurrency(cents: bigint, currency: string): string {
+  const symbol =
+    currency.toUpperCase() === "USD" ? "$" : currency.toUpperCase() === "CNY" ? "¥" : "";
+  const sign = cents < 0n ? "-" : "";
+  const absolute = cents < 0n ? -cents : cents;
+  const amount = `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
+  return symbol ? `${symbol}${amount}` : `${amount} ${currency}`.trim();
+}
+
+function formatExtraUsage(info: BoosterWalletInfo): string[] {
+  const hasMonthlyLimit = info.monthlyChargeLimitEnabled && info.monthlyChargeLimitCents > 0n;
+  const lines = ["Extra Usage"];
+  if (hasMonthlyLimit) {
+    const used =
+      info.monthlyUsedCents < info.monthlyChargeLimitCents
+        ? info.monthlyUsedCents
+        : info.monthlyChargeLimitCents;
+    const percent = Number(
+      (used * 100n + info.monthlyChargeLimitCents / 2n) / info.monthlyChargeLimitCents,
+    );
+    const barUnits = Number((used * 400n) / info.monthlyChargeLimitCents);
+    lines.push(`${quotaBar(barUnits, 400)} ${percent}% used`);
+  }
+  lines.push(`Used this month: ${formatCurrency(info.monthlyUsedCents, info.currency)}`);
+  lines.push(
+    `Monthly limit: ${hasMonthlyLimit ? formatCurrency(info.monthlyChargeLimitCents, info.currency) : "Unlimited"}`,
+  );
+  lines.push(`Balance: ${formatCurrency(info.balanceCents, info.currency)}`);
+  return lines;
 }
 
 export function parseUsageRow(value: unknown, fallbackLabel: string): UsageRow | null {
@@ -113,6 +199,12 @@ export function parseUsageSummary(payload: unknown, options: UsageFormatOptions 
         lines.push(formatUsageRow(row, options));
       }
     }
+  }
+
+  const extraUsage = parseBoosterWallet(record.boosterWallet);
+  if (extraUsage) {
+    if (lines.length > 0) lines.push("");
+    lines.push(...formatExtraUsage(extraUsage));
   }
 
   while (lines.at(-1) === "") lines.pop();
@@ -244,7 +336,7 @@ function fetchKimiUsage(token: string, signal: AbortSignal): Promise<Response> {
   return fetch(buildKimiUsageUrl(), {
     method: "GET",
     headers: {
-      ...getCommonHeaders(),
+      ...getKimiProviderHeaders(),
       Authorization: `Bearer ${token}`,
     },
     signal,

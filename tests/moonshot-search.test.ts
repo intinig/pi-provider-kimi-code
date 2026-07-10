@@ -19,7 +19,8 @@ describe("moonshot_search", () => {
               title: "Example",
               url: "https://example.com",
               snippet: "Example summary",
-              content: "Full page",
+              date: "2026-07-10",
+              site_name: "Example Site",
               ignored: "ignored",
             },
           ],
@@ -33,7 +34,7 @@ describe("moonshot_search", () => {
 
     const result = await tool.execute(
       "tool-call-1",
-      { query: "kimi code", limit: 99, include_content: true },
+      { query: "kimi code" },
       undefined,
       undefined,
       undefined as never,
@@ -52,16 +53,14 @@ describe("moonshot_search", () => {
     );
     assert.deepEqual(JSON.parse(calls[0].init.body as string), {
       text_query: "kimi code",
-      limit: 20,
-      enable_page_crawling: true,
-      timeout_seconds: 30,
     });
     assert.deepEqual(result.details, [
       {
         title: "Example",
         url: "https://example.com",
         snippet: "Example summary",
-        content: "Full page",
+        date: "2026-07-10",
+        siteName: "Example Site",
       },
     ]);
   });

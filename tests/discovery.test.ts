@@ -86,17 +86,29 @@ describe("discoverKimiModelMetadata", () => {
     assert.equal(headers.Authorization, "Bearer tok-1");
   });
 
-  it("prefers the entry with id 'kimi-for-coding' even when other models are present", async () => {
+  it("retains metadata for every model returned by the catalog", async () => {
     mock = mockFetch(() =>
       jsonResponse({
         data: [
-          { id: "k2p7-beta", display_name: "Beta K2.7" },
           {
             id: "kimi-for-coding",
             display_name: "Kimi For Coding",
             context_length: 262144,
             supports_reasoning: true,
             supports_image_in: true,
+          },
+          {
+            id: "kimi-for-coding-highspeed",
+            display_name: "Kimi For Coding High Speed",
+            context_length: 524288,
+            supports_reasoning: true,
+            supports_video_in: true,
+            protocol: "anthropic",
+            think_efforts: {
+              support: true,
+              valid_efforts: ["low", "high"],
+              default_effort: "high",
+            },
           },
         ],
       }),
@@ -108,6 +120,16 @@ describe("discoverKimiModelMetadata", () => {
     assert.equal(result.contextLength, 262144);
     assert.equal(result.supportsReasoning, true);
     assert.equal(result.supportsImageIn, true);
+    assert.deepEqual(result.modelCatalog?.["kimi-for-coding-highspeed"], {
+      wireModelId: "kimi-for-coding-highspeed",
+      modelDisplay: "Kimi For Coding High Speed",
+      contextLength: 524288,
+      supportsReasoning: true,
+      supportsVideoIn: true,
+      protocol: "anthropic",
+      supportEfforts: ["low", "high"],
+      defaultEffort: "high",
+    });
   });
 
   it("returns empty when no kimi-for-coding is present", async () => {
@@ -195,10 +217,15 @@ describe("discoverKimiModelMetadata", () => {
     assert.equal(result.supportsReasoning, true);
   });
 
-  it("omits optional fields when the server does not provide them", async () => {
+  it("marks a fresh standard-only catalog so unavailable models can be removed", async () => {
     mock = mockFetch(() => jsonResponse({ data: [{ id: "kimi-for-coding" }] }));
     const result = await discoverKimiModelMetadata("tok-1");
-    assert.deepEqual(result, { wireModelId: "kimi-for-coding" });
+    assert.deepEqual(result, {
+      wireModelId: "kimi-for-coding",
+      modelCatalog: {
+        "kimi-for-coding": { wireModelId: "kimi-for-coding" },
+      },
+    });
   });
 
   it("respects KIMI_CODE_BASE_URL when computing the discovery endpoint", async () => {
@@ -254,11 +281,13 @@ describe("applyKimiOAuthExtrasToModel", () => {
       contextLength: 1048576,
       supportsReasoning: true,
       supportsImageIn: true,
-    }) as Model<Api> & { wireModelId?: string; input: string[] };
+      protocol: "anthropic",
+    }) as Model<Api> & { wireModelId?: string; wireProtocol?: string; input: string[] };
 
     assert.equal(result.name, "Kimi K2 Next");
     assert.equal(result.contextWindow, 1048576);
     assert.equal(result.wireModelId, "kimi-k2-next");
+    assert.equal(result.wireProtocol, "anthropic");
     assert.equal(result.reasoning, true);
     assert.deepEqual(result.input, ["text", "image"]);
   });

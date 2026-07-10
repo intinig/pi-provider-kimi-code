@@ -152,6 +152,22 @@ function getStableDeviceId(): string {
   return DEVICE_ID;
 }
 
+export function parseKimiCodeCustomHeaders(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const raw = env.KIMI_CODE_CUSTOM_HEADERS?.trim();
+  if (!raw) return {};
+  const headers: Record<string, string> = {};
+  for (const line of raw.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const name = line.slice(0, colon).trim();
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) continue;
+    headers[name] = asciiHeaderValue(line.slice(colon + 1));
+  }
+  return headers;
+}
+
 export function getCommonHeaders(): Record<string, string> {
   const headers = {
     "User-Agent": KIMI_CODE_USER_AGENT,
@@ -165,4 +181,29 @@ export function getCommonHeaders(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(headers).map(([key, value]) => [key, asciiHeaderValue(value)]),
   ) as Record<string, string>;
+}
+
+const RESERVED_PROVIDER_HEADERS = new Set([
+  "accept",
+  "anthropic-version",
+  "authorization",
+  "content-type",
+  "user-agent",
+  "x-api-key",
+]);
+
+function isReservedProviderHeader(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return RESERVED_PROVIDER_HEADERS.has(normalized) || normalized.startsWith("x-msh-");
+}
+
+export function getKimiProviderHeaders(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const customHeaders = Object.fromEntries(
+    Object.entries(parseKimiCodeCustomHeaders(env)).filter(
+      ([name]) => !isReservedProviderHeader(name),
+    ),
+  );
+  return { ...customHeaders, ...getCommonHeaders() };
 }

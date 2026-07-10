@@ -78,6 +78,66 @@ describe("parseUsageSummary", () => {
     ]);
   });
 
+  it("formats Extra Usage balance and monthly spending", () => {
+    const summary = parseUsageSummary({
+      boosterWallet: {
+        balance: {
+          type: "BOOSTER",
+          amount: "20000000000",
+          amountLeft: "10000000000",
+        },
+        monthlyChargeLimitEnabled: true,
+        monthlyChargeLimit: { currency: "USD", priceInCents: "20000" },
+        monthlyUsed: { currency: "USD", priceInCents: "5000" },
+      },
+    });
+
+    assert.deepEqual(summary.split("\n"), [
+      "Extra Usage",
+      "████████████▌                                      25% used",
+      "Used this month: $50.00",
+      "Monthly limit: $200.00",
+      "Balance: $100.00",
+    ]);
+  });
+
+  it("shows depleted Extra Usage wallets with a zero balance", () => {
+    const summary = parseUsageSummary({
+      boosterWallet: {
+        balance: {
+          type: "BOOSTER",
+          amount: "0",
+          amountLeft: "0",
+        },
+        monthlyChargeLimitEnabled: true,
+        monthlyChargeLimit: { currency: "USD", priceInCents: "20000" },
+        monthlyUsed: { currency: "USD", priceInCents: "20000" },
+      },
+    });
+
+    assert.deepEqual(summary.split("\n"), [
+      "Extra Usage",
+      "██████████████████████████████████████████████████ 100% used",
+      "Used this month: $200.00",
+      "Monthly limit: $200.00",
+      "Balance: $0.00",
+    ]);
+  });
+
+  it("preserves fixed-point cents above JavaScript's safe integer range", () => {
+    const summary = parseUsageSummary({
+      boosterWallet: {
+        balance: {
+          type: "BOOSTER",
+          amount: "9007199255499999",
+          amountLeft: "9007199255499999",
+        },
+      },
+    });
+
+    assert.match(summary, /Balance: \$90071992\.55$/);
+  });
+
   it("formats limits-only payloads without a leading blank and normalizes window units", () => {
     const summary = parseUsageSummary({
       limits: [

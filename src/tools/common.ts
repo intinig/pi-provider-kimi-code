@@ -2,7 +2,7 @@ import { AuthStorage, type AgentToolResult } from "@earendil-works/pi-coding-age
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
 import { PROVIDER_ID, getBaseUrl } from "../constants.ts";
-import { getCommonHeaders } from "../device.ts";
+import { getKimiProviderHeaders } from "../device.ts";
 import { refreshKimiAuthToken } from "../oauth.ts";
 
 export const KIMI_TOOL_TIMEOUT_MS = 180_000;
@@ -67,7 +67,7 @@ export function getKimiDatasourceUrl(): string {
 
 export function buildHeaders(accessToken: string, toolCallId: string): Record<string, string> {
   return {
-    ...getCommonHeaders(),
+    ...getKimiProviderHeaders(),
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
     "X-Msh-Tool-Call-Id": toolCallId,

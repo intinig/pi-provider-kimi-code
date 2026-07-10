@@ -1,124 +1,76 @@
 # Testing
 
-## Quick Test
+## Local Checks
+
+```bash
+npm test
+npm run check
+npm run lint
+```
+
+## Live E2E Suites
+
+All live suites require `KIMI_API_KEY`. `scripts/test_e2e.sh` is the run-all entry point; it invokes the focused suites below in order.
 
 ```bash
 KIMI_API_KEY=sk-... ./scripts/test_e2e.sh
 ```
 
-## What It Tests
+The cache suites issue many requests and some have long waits. Run an individual suite while investigating one behavior.
 
-The test script covers the following checks:
+| Suite                                     | Purpose                                                                                                                       |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/e2e/model-contract.sh`           | Reads `/v1/models` and reports model id, protocol, thinking capability, `think_efforts`, context, and input modalities.       |
+| `scripts/e2e/api-schema-inspect.sh`       | Writes normalized response-schema snapshots for `/models`, `/chat/completions`, and `/messages`; optionally diffs a baseline. |
+| `scripts/e2e/smoke.sh`                    | Runs Pi through both wire protocols and the configured thinking-level matrix.                                                 |
+| `scripts/e2e/thinking-effort-contract.sh` | Uses `/v1/models` to select a server-declared effort, then verifies `thinking.effort` is accepted on selected protocols.      |
+| `scripts/e2e/provider-payload.sh`         | Captures Pi's wire payload and asserts model identity, `thinking.type`, nested effort, and removal of `reasoning_effort`.     |
+| `scripts/e2e/file-upload.sh`              | Uploads a large image and verifies an `ms://` reference with the OpenAI endpoint.                                             |
+| `scripts/e2e/cache/*.sh`                  | Focused cache probes, grouped by TTL, mechanisms, identity, prefix behavior, parameters, and multimodal/concurrency behavior. |
 
-1. Smoke test in Anthropic mode
-2. Smoke test in OpenAI mode
-3. High-thinking extraction (thinking + answer + usage)
-4. Prompt-cache TTL probe
-5. Large file upload via `ms://` reference
-6. Direct `prompt_cache_key` verification
+`./scripts/list_models.sh` remains as a compatibility entry point for `scripts/e2e/model-contract.sh`. `./scripts/test_payload_thinking.sh` remains as a compatibility entry point for `scripts/e2e/thinking-effort-contract.sh`.
 
-## Test Script Environment Variables
+## Live E2E Variables
 
-| Variable                   | Default                                     | Description                             |
-| -------------------------- | ------------------------------------------- | --------------------------------------- |
-| `KIMI_API_KEY`             | (required)                                  | API key                                 |
-| `KIMI_CODE_DEBUG`          | `1`                                         | Provider debug logs                     |
-| `KIMI_E2E_VERBOSE`         | `1`                                         | Command and environment diagnostics     |
-| `KIMI_E2E_MODEL`           | `kimi-coding/kimi-for-coding`               | Model for smoke tests                   |
-| `KIMI_E2E_CACHE_INTERVALS` | `60,300`                                    | Absolute seconds from warmup per probe  |
-| `KIMI_E2E_CACHE_KEY`       | `pi-provider-kimi-code-e2e-<pid>-<unix_ts>` | Override cache key for TTL probe        |
-| `KIMI_E2E_CACHE_REPEAT`    | `2000`                                      | Long-text repeat count for cache warmup |
-| `KIMI_E2E_SKIP_CACHE`      | `0`                                         | Set `1` to skip cache TTL phase         |
-| `KIMI_E2E_ONLY_CACHE`      | `0`                                         | Set `1` to run only cache TTL test      |
+| Variable                          | Default                          | Description                                                                                                      |
+| --------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `KIMI_API_KEY`                    | required                         | API key used for direct API probes and Pi.                                                                       |
+| `KIMI_CODE_BASE_URL`              | `https://api.kimi.com/coding/v1` | Coding API base URL.                                                                                             |
+| `KIMI_E2E_MODEL`                  | `kimi-coding/kimi-for-coding`    | Pi model alias for provider smoke tests.                                                                         |
+| `KIMI_E2E_WIRE_MODEL`             | `kimi-for-coding`                | Wire model id used by direct API contract suites.                                                                |
+| `KIMI_E2E_EFFORT`                 | model default                    | A server-declared effort to test. The contract suite rejects values not listed in `think_efforts.valid_efforts`. |
+| `KIMI_E2E_EFFORT_PROTOCOLS`       | `openai,anthropic`               | Comma-separated direct protocols for the effort contract suite.                                                  |
+| `KIMI_E2E_EXPECT_THINKING_EFFORT` | `none`                           | Expected nested effort in provider payload captures; `none` requires the field to be absent.                     |
+| `KIMI_E2E_SCHEMA_ENDPOINTS`       | `models,openai,anthropic`        | Comma-separated endpoints queried by the schema inspection suite.                                                |
+| `KIMI_E2E_SCHEMA_OUTPUT`          | temporary file                   | Destination for the normalized API schema snapshot.                                                              |
+| `KIMI_E2E_SCHEMA_BASELINE`        | unset                            | Existing snapshot to diff against; a difference makes the suite fail.                                            |
+| `KIMI_E2E_THINKING_LEVELS`        | `off low medium high`            | Pi thinking levels exercised by the smoke suite.                                                                 |
+| `KIMI_E2E_VERBOSE`                | `1`                              | Print suite setup and Pi version.                                                                                |
+| `KIMI_E2E_CACHE_REPEAT`           | `2000`                           | Long-text repeat count used by cache suites.                                                                     |
+| `KIMI_E2E_SKIP_TTL_UPPER`         | `1`                              | Set to `0` to run the 30-minute TTL upper-bound probe.                                                           |
+| `KIMI_E2E_SKIP_VERY_LARGE_CACHE`  | `1`                              | Set to `0` to run the very-large-context cache probe.                                                            |
+| `KIMI_E2E_KEEP_CAPTURES`          | `0`                              | Set to `1` to retain provider-payload captures under `/tmp`.                                                     |
 
-## Issue #19 Reproduction Script
+## Provider Payload Capture
+
+`provider-payload.sh` starts a loopback capture proxy, forwards the request to Kimi, and removes captures by default. It persists redacted `Authorization` and `x-api-key` headers. To inspect a retained capture:
 
 ```bash
-KIMI_API_KEY=sk-... ./scripts/test_payload_thinking.sh
+KIMI_API_KEY=sk-... KIMI_E2E_KEEP_CAPTURES=1 ./scripts/e2e/provider-payload.sh
+CAPTURE_DIR=/tmp/kimi-provider-payload-... node scripts/kimi-compat/inspect_captures.mjs
+CAPTURE_DIR=/tmp/kimi-provider-payload-... node scripts/kimi-compat/dump_raw_request.mjs
 ```
 
-Tests payload variants against both OpenAI (`/chat/completions`) and Anthropic (`/messages`) endpoints on the Kimi Code API. Verifies that the server actually respects thinking configuration by checking response content, not just HTTP status.
-
-### Test Groups
-
-| Group | What it tests                                       |
-| ----- | --------------------------------------------------- |
-| A     | Baselines — no thinking/reasoning fields            |
-| B     | `reasoning_effort: null` (v0.6.0 bug)               |
-| C     | `thinking` nested in `extra_body` (v0.6.0 behavior) |
-| D     | `thinking` at top level (fixed behavior)            |
-| E     | Streaming + old payload combos                      |
-| F     | Streaming + fixed payload combos + `stream_options` |
-| G     | `prompt_cache_key`                                  |
-
-### Results (2026-06-18, Kimi Code API)
-
-**Non-streaming:**
-
-| Test | Endpoint  | Payload                         | thinking in response? | Verdict                               |
-| ---- | --------- | ------------------------------- | --------------------- | ------------------------------------- |
-| A1   | OpenAI    | no thinking fields              | yes                   | default is thinking-on                |
-| A2   | Anthropic | no thinking fields              | no                    | default is thinking-off               |
-| C1   | OpenAI    | `extra_body.thinking: enabled`  | yes                   | but thinking is on by default anyway  |
-| C2   | OpenAI    | `extra_body.thinking: disabled` | **yes**               | **server ignored disable**            |
-| C3   | Anthropic | `extra_body.thinking: enabled`  | **no**                | **server ignored enable**             |
-| C4   | Anthropic | `extra_body.thinking: disabled` | no                    | but thinking is off by default anyway |
-| D1   | OpenAI    | top-level `thinking: enabled`   | yes                   | works                                 |
-| D2   | OpenAI    | top-level `thinking: disabled`  | no                    | works                                 |
-| D3   | Anthropic | top-level `thinking: enabled`   | yes                   | works                                 |
-| D4   | Anthropic | top-level `thinking: disabled`  | no                    | works                                 |
-
-**Conclusion:** `extra_body` nesting is silently ignored by the server. Only top-level `thinking` is respected. The fix (spreading `extra_body` to top level) is necessary for thinking config to take effect.
-
-**Streaming:** F2/F4 (thinking enabled, streaming) did not return thinking content in the response. This may be a token limit issue (`max_completion_tokens=128`) or a difference in how streaming surfaces reasoning content. Non-streaming results are definitive.
-
-## Request Capture (capture_proxy)
-
-Intercepts live `pi -> Kimi` HTTP traffic, writes request/response pairs to disk for inspection and replay.
-
-### 1. Start the proxy
+For manual proxy use, `KIMI_CODE_BASE_URL` must retain the `/coding/v1` prefix:
 
 ```bash
-mkdir -p /tmp/kimi-captures
-CAPTURE_PORT=8787 \
-CAPTURE_TARGET_ORIGIN=https://api.kimi.com \
-CAPTURE_DIR=/tmp/kimi-captures \
-node scripts/kimi-compat/capture_proxy.mjs
-```
+CAPTURE_PORT=8787 CAPTURE_TARGET_ORIGIN=https://api.kimi.com CAPTURE_DIR=/tmp/kimi-captures \
+  node scripts/kimi-compat/capture_proxy.mjs
 
-### 2. Send a request through the proxy
-
-The key is `KIMI_CODE_BASE_URL` must include the `/coding/v1` path prefix, not just the origin. The proxy forwards the full request path to `CAPTURE_TARGET_ORIGIN`, so without the prefix the upstream paths resolve to 404.
-
-```bash
 KIMI_CODE_BASE_URL=http://127.0.0.1:8787/coding/v1 \
-pi -ne -e . --model kimi-coding/kimi-for-coding -p "Say hi." --mode print
-```
-
-Wrong: `KIMI_CODE_BASE_URL=http://127.0.0.1:8787` (requests go to `/chat/completions` instead of `/coding/v1/chat/completions`).
-
-### 3. Inspect captures
-
-```bash
-CAPTURE_DIR=/tmp/kimi-captures node scripts/kimi-compat/inspect_captures.mjs
-CAPTURE_DIR=/tmp/kimi-captures node scripts/kimi-compat/dump_raw_request.mjs
-```
-
-### 4. Replay a capture
-
-```bash
-CAPTURE_DIR=/tmp/kimi-captures node scripts/kimi-compat/replay_capture.mjs
-```
-
-Replays the latest captured request. Specify a filename to replay a specific one.
-
-### 5. Cleanup
-
-```bash
-pkill -f capture_proxy.mjs
-rm -rf /tmp/kimi-captures
+  pi -ne -e . --model kimi-coding/kimi-for-coding -p "Say hi." --mode print
 ```
 
 ## Proxy / Networking
 
-If `curl` can reach Kimi but `pi` reports `fetch failed`, check your `http_proxy` / `https_proxy` / `all_proxy` environment. `pi` uses Node's `fetch` / undici stack, which may behave differently from `curl`.
+If `curl` can reach Kimi but Pi reports `fetch failed`, check `http_proxy`, `https_proxy`, and `all_proxy`. Pi uses Node's `fetch` / undici stack, which can differ from `curl`.

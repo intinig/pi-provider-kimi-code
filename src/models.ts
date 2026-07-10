@@ -5,9 +5,9 @@ import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
 import type { KimiInputModality, KimiResolvedModelConfig, ModelConfig } from "./config.ts";
 
 import { type KimiWireProtocol, getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 
-export interface KimiOAuthExtras {
+export interface KimiModelMetadata {
   wireModelId?: string;
   modelDisplay?: string;
   contextLength?: number;
@@ -15,6 +15,13 @@ export interface KimiOAuthExtras {
   supportsImageIn?: boolean;
   supportsVideoIn?: boolean;
   supportsThinkingType?: "only" | "no" | "both";
+  protocol?: KimiWireProtocol;
+  supportEfforts?: string[];
+  defaultEffort?: string;
+}
+
+export interface KimiOAuthExtras extends KimiModelMetadata {
+  modelCatalog?: Record<string, KimiModelMetadata>;
 }
 
 export type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
@@ -47,6 +54,9 @@ function mergeInputModalities(
 const COST_STANDARD = { input: 0.897, output: 3.724, cacheRead: 0.179, cacheWrite: 0.897 };
 const COST_HIGH_SPEED = { input: 1.793, output: 7.448, cacheRead: 0.359, cacheWrite: 1.793 };
 
+export const KIMI_CODING_MODEL_ID = "kimi-for-coding";
+export const KIMI_CODING_HIGHSPEED_MODEL_ID = "kimi-for-coding-highspeed";
+
 function resolveModelCost(modelDisplay: string | undefined): {
   input: number;
   output: number;
@@ -57,13 +67,17 @@ function resolveModelCost(modelDisplay: string | undefined): {
   return COST_STANDARD;
 }
 
-export function buildKimiModelFromConfig(config: ModelConfig): Model<Api> {
+export function buildKimiModelFromConfig(
+  config: ModelConfig,
+  modelId = KIMI_CODING_MODEL_ID,
+): Model<Api> {
+  const isHighSpeed = modelId === KIMI_CODING_HIGHSPEED_MODEL_ID;
   return {
-    id: "kimi-for-coding",
-    name: "Kimi for Coding",
+    id: modelId,
+    name: isHighSpeed ? "Kimi for Coding High Speed" : "Kimi for Coding",
     reasoning: config.reasoning,
     input: [...config.input] as unknown as ("text" | "image" | "video")[],
-    cost: { ...COST_STANDARD },
+    cost: { ...(isHighSpeed ? COST_HIGH_SPEED : COST_STANDARD) },
     contextWindow: config.contextWindow,
     maxTokens: config.maxTokens,
   } as Model<Api>;
@@ -86,6 +100,8 @@ export function resolveKimiModelConfig(
   if (typeof extras.supportsImageIn === "boolean" || typeof extras.supportsVideoIn === "boolean") {
     resolved.input = mergeInputModalities(resolved.input, extras);
   }
+  if (extras.supportEfforts) resolved.supportEfforts = [...extras.supportEfforts];
+  if (extras.defaultEffort) resolved.defaultEffort = extras.defaultEffort;
   return resolved;
 }
 
@@ -97,11 +113,61 @@ interface KimiServerModel {
   supports_image_in?: unknown;
   supports_video_in?: unknown;
   supports_thinking_type?: unknown;
+  protocol?: unknown;
+  think_efforts?: unknown;
 }
 
 function parseSupportsThinkingType(value: unknown): "only" | "no" | "both" | undefined {
   if (value === "only" || value === "no" || value === "both") return value;
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseThinkEfforts(value: unknown): {
+  supportEfforts?: string[];
+  defaultEffort?: string;
+} {
+  if (!isRecord(value) || value.support !== true) return {};
+  const validEfforts = Array.isArray(value.valid_efforts)
+    ? value.valid_efforts.filter(
+        (effort): effort is string => typeof effort === "string" && !!effort,
+      )
+    : [];
+  return {
+    ...(validEfforts.length > 0 ? { supportEfforts: validEfforts } : {}),
+    ...(typeof value.default_effort === "string" && value.default_effort
+      ? { defaultEffort: value.default_effort }
+      : {}),
+  };
+}
+
+function parseKimiModelMetadata(model: KimiServerModel): KimiModelMetadata | undefined {
+  if (typeof model.id !== "string" || !model.id) return undefined;
+  const metadata: KimiModelMetadata = { wireModelId: model.id };
+  if (typeof model.display_name === "string") metadata.modelDisplay = model.display_name;
+  if (typeof model.context_length === "number" && model.context_length > 0) {
+    metadata.contextLength = model.context_length;
+  }
+  const thinkingType = parseSupportsThinkingType(model.supports_thinking_type);
+  if (thinkingType) {
+    metadata.supportsThinkingType = thinkingType;
+  } else if (typeof model.supports_reasoning === "boolean") {
+    metadata.supportsReasoning = model.supports_reasoning;
+  }
+  if (typeof model.supports_image_in === "boolean") {
+    metadata.supportsImageIn = model.supports_image_in;
+  }
+  if (typeof model.supports_video_in === "boolean") {
+    metadata.supportsVideoIn = model.supports_video_in;
+  }
+  if (model.protocol === "openai" || model.protocol === "anthropic") {
+    metadata.protocol = model.protocol;
+  }
+  Object.assign(metadata, parseThinkEfforts(model.think_efforts));
+  return metadata;
 }
 
 export function buildModelsUrl(baseUrl: string): string {
@@ -127,7 +193,7 @@ export async function discoverKimiModelMetadata(
     const response = await fetch(getModelsUrl(protocol), {
       signal: controller.signal,
       headers: {
-        ...getCommonHeaders(),
+        ...getKimiProviderHeaders(),
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
       },
@@ -135,26 +201,18 @@ export async function discoverKimiModelMetadata(
     if (!response.ok) return {};
     const json = (await response.json()) as { data?: unknown };
     const list = Array.isArray(json.data) ? (json.data as KimiServerModel[]) : [];
-    const preferred = list.find((m) => typeof m.id === "string" && m.id === "kimi-for-coding");
-    if (!preferred || typeof preferred.id !== "string") return {};
-    const extras: KimiOAuthExtras = { wireModelId: preferred.id };
-    if (typeof preferred.display_name === "string") extras.modelDisplay = preferred.display_name;
-    if (typeof preferred.context_length === "number" && preferred.context_length > 0) {
-      extras.contextLength = preferred.context_length;
+    const supportedIds = new Set([KIMI_CODING_MODEL_ID, KIMI_CODING_HIGHSPEED_MODEL_ID]);
+    const modelCatalog: Record<string, KimiModelMetadata> = {};
+    for (const model of list) {
+      if (typeof model.id !== "string" || !supportedIds.has(model.id)) continue;
+      const metadata = parseKimiModelMetadata(model);
+      if (metadata) modelCatalog[model.id] = metadata;
     }
-    const thinkingType = parseSupportsThinkingType(preferred.supports_thinking_type);
-    if (thinkingType) {
-      extras.supportsThinkingType = thinkingType;
-    } else if (typeof preferred.supports_reasoning === "boolean") {
-      extras.supportsReasoning = preferred.supports_reasoning;
+    const preferred = modelCatalog[KIMI_CODING_MODEL_ID];
+    if (!preferred) {
+      return Object.keys(modelCatalog).length > 0 ? { modelCatalog } : {};
     }
-    if (typeof preferred.supports_image_in === "boolean") {
-      extras.supportsImageIn = preferred.supports_image_in;
-    }
-    if (typeof preferred.supports_video_in === "boolean") {
-      extras.supportsVideoIn = preferred.supports_video_in;
-    }
-    return extras;
+    return { ...preferred, modelCatalog };
   } catch {
     return {};
   } finally {
@@ -162,12 +220,23 @@ export async function discoverKimiModelMetadata(
   }
 }
 
+export function getKimiModelMetadata(extras: KimiOAuthExtras, modelId: string): KimiModelMetadata {
+  const discovered = extras.modelCatalog?.[modelId];
+  if (discovered) return discovered;
+  return modelId === KIMI_CODING_MODEL_ID ? extras : {};
+}
+
 export function applyKimiOAuthExtrasToModel(
   model: Model<Api>,
-  extras: KimiOAuthExtras,
+  extras: KimiModelMetadata,
 ): Model<Api> {
-  const next: Model<Api> & { wireModelId?: string; supportsThinkingType?: "only" | "no" | "both" } =
-    { ...model };
+  const next: Model<Api> & {
+    wireModelId?: string;
+    supportsThinkingType?: "only" | "no" | "both";
+    wireProtocol?: KimiWireProtocol;
+    supportEfforts?: string[];
+    defaultEffort?: string;
+  } = { ...model };
   if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
     next.name = extras.modelDisplay;
     next.cost = resolveModelCost(extras.modelDisplay);
@@ -189,5 +258,8 @@ export function applyKimiOAuthExtrasToModel(
     const input = mergeInputModalities(next.input as KimiInputModality[], extras);
     (next as unknown as { input: string[] }).input = input;
   }
+  if (extras.protocol) next.wireProtocol = extras.protocol;
+  if (extras.supportEfforts) next.supportEfforts = [...extras.supportEfforts];
+  if (extras.defaultEffort) next.defaultEffort = extras.defaultEffort;
   return next;
 }

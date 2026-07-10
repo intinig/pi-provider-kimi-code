@@ -24,7 +24,7 @@ import {
 } from "./config.ts";
 
 import { ENV_KIMI_CODE_PROTOCOL, getApiProtocol, getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 import { isKimiAuthErrorMessage, refreshKimiAuthToken } from "./oauth.ts";
 import {
   type Uploader,
@@ -163,7 +163,7 @@ export function resolveKimiApiKey(apiKey: string | undefined): string {
 }
 
 export function mergeKimiRequestHeaders(headers?: Record<string, string>): Record<string, string> {
-  return { ...getCommonHeaders(), ...headers };
+  return { ...getKimiProviderHeaders(), ...headers };
 }
 
 export function streamSimpleKimi(
@@ -192,8 +192,27 @@ export function streamSimpleKimi(
     protocol: ENV_KIMI_CODE_PROTOCOL,
     uploads: DEFAULT_KIMI_CODE_CONFIG.uploads,
   };
-  const modelConfig = streamConfig.model;
-  const apiProtocol = getApiProtocol(streamConfig.protocol);
+  const discoveredModel = model as Model<Api> & {
+    supportsThinkingType?: "only" | "no" | "both";
+    wireProtocol?: KimiCodeConfig["protocol"];
+    supportEfforts?: string[];
+    defaultEffort?: string;
+  };
+  const modelConfig: KimiResolvedModelConfig = {
+    ...streamConfig.model,
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    input: [...model.input],
+    reasoning: model.reasoning,
+    supportsThinkingType:
+      discoveredModel.supportsThinkingType ?? (model.reasoning ? undefined : "no"),
+    supportEfforts: discoveredModel.supportEfforts
+      ? [...discoveredModel.supportEfforts]
+      : undefined,
+    defaultEffort: discoveredModel.defaultEffort,
+  };
+  const wireProtocol = discoveredModel.wireProtocol ?? streamConfig.protocol;
+  const apiProtocol = getApiProtocol(wireProtocol);
   const originalOnPayload = options?.onPayload;
   // The pi-side model id ("kimi-for-coding") is what users select via /model
   // and what gets persisted into sessions. The wire model id discovered at
@@ -257,10 +276,10 @@ export function streamSimpleKimi(
       const runtimeModel = {
         ...model,
         api: apiProtocol,
-        baseUrl: getBaseUrl(streamConfig.protocol),
+        baseUrl: getBaseUrl(wireProtocol),
       } as Model<Api>;
       const upstream =
-        streamConfig.protocol === "openai"
+        wireProtocol === "openai"
           ? streamSimpleOpenAICompletions(
               runtimeModel as Model<"openai-completions">,
               context,

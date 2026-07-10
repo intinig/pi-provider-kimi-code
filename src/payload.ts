@@ -6,7 +6,7 @@ import type { CacheRetention, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { KimiResolvedModelConfig, ModelReasoningEntry } from "./config.ts";
 
 import { getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 import { optimizeToolSchemas } from "./schema-dedup.ts";
 
 // =============================================================================
@@ -116,7 +116,7 @@ export async function uploadKimiFile(
   try {
     const response = await fetch(uploadUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, ...getCommonHeaders() },
+      headers: { ...getKimiProviderHeaders(), Authorization: `Bearer ${apiKey}` },
       body: formData,
     });
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
@@ -425,7 +425,19 @@ export async function applyKimiPayloadMutations(
       : { include_usage: true };
   }
 
-  // 5. Normalize deprecated max_tokens (OpenAI path only — Anthropic
+  // 5. Spread extra_body into the top-level payload before normalization and
+  //    config caps. Top-level fields retain precedence over extra_body.
+  if (isRecord(payload.extra_body)) {
+    const extraBody = payload.extra_body as JsonRecord;
+    delete payload.extra_body;
+    for (const [key, value] of Object.entries(extraBody)) {
+      if (payload[key] === undefined) {
+        payload[key] = value;
+      }
+    }
+  }
+
+  // 6. Normalize deprecated max_tokens (OpenAI path only — Anthropic
   //    /messages uses max_tokens natively).
   if (ctx.api === "openai-completions") {
     if (payload.max_completion_tokens === undefined && typeof payload.max_tokens === "number") {
@@ -438,44 +450,45 @@ export async function applyKimiPayloadMutations(
   if (generation.temperature !== undefined) payload.temperature = generation.temperature;
   if (generation.topP !== undefined) payload.top_p = generation.topP;
   if (generation.maxCompletionTokens !== undefined) {
-    payload.max_completion_tokens = generation.maxCompletionTokens;
+    const maxTokensKey = ctx.api === "anthropic-messages" ? "max_tokens" : "max_completion_tokens";
+    const currentMaxTokens = payload[maxTokensKey];
+    payload[maxTokensKey] =
+      typeof currentMaxTokens === "number"
+        ? Math.min(currentMaxTokens, generation.maxCompletionTokens)
+        : generation.maxCompletionTokens;
   }
 
-  // 5. Spread extra_body into top-level payload before reasoning mapping,
-  //    matching upstream (Kimi expects thinking etc. at the root).
-  if (isRecord(payload.extra_body)) {
-    const extraBody = payload.extra_body as JsonRecord;
-    delete payload.extra_body;
-    for (const [key, value] of Object.entries(extraBody)) {
-      if (payload[key] === undefined) {
-        payload[key] = value;
-      }
-    }
+  // 7. Reasoning effort mapping. Kimi now accepts effort only inside the
+  //    thinking object, and only for values advertised by the model catalog.
+  delete payload.reasoning_effort;
+  if (ctx.modelConfig.supportsThinkingType === "no") {
+    delete payload.thinking;
   }
-
-  // 6. Reasoning effort mapping. Merges into any existing top-level thinking
-  //    field (which may have come from extra_body above).
   const resolvedReasoning = resolveThinkingLevel(ctx);
   if (resolvedReasoning) {
     const mapped = resolveReasoningForLevel(resolvedReasoning, ctx.modelConfig);
     if (mapped) {
-      if (mapped.effort !== null) {
-        payload.reasoning_effort = mapped.effort;
-      } else {
-        delete payload.reasoning_effort;
-      }
       const oldThinking = isRecord(payload.thinking) ? payload.thinking : {};
-      payload.thinking = {
+      const thinking: JsonRecord = {
         ...oldThinking,
         type: mapped.enabled ? "enabled" : "disabled",
       };
-      if (mapped.enabled && ctx.modelConfig.thinkingKeep) {
-        (payload.thinking as JsonRecord).keep = ctx.modelConfig.thinkingKeep;
+      delete thinking.effort;
+      if (!mapped.enabled) delete thinking.keep;
+      const effort = ctx.reasoning
+        ? mapped.effort
+        : (ctx.modelConfig.defaultEffort ?? mapped.effort);
+      if (mapped.enabled && effort !== null && ctx.modelConfig.supportEfforts?.includes(effort)) {
+        thinking.effort = effort;
       }
+      if (mapped.enabled && ctx.modelConfig.thinkingKeep) {
+        thinking.keep = ctx.modelConfig.thinkingKeep;
+      }
+      payload.thinking = thinking;
     }
   }
 
-  // 7. K2.7 Code API constraints: the server rejects non-default values for
+  // 8. K2.7 Code API constraints: the server rejects non-default values for
   //    temperature (must be 1.0) and top_p (must be 0.95), and tool_choice
   //    "required" / function-specific when thinking is enabled (always-on).
   if (payload.temperature !== undefined && payload.temperature !== 1) {

@@ -102,16 +102,18 @@ KIMI_API_KEY=sk-... pi
 
 ## Model
 
-This provider publishes one Pi model ID:
+This provider publishes two Pi model IDs:
 
 ```text
 kimi-coding/kimi-for-coding
+kimi-coding/kimi-for-coding-highspeed
 ```
 
-Select it inside Pi:
+Select standard or highspeed mode inside Pi:
 
 ```text
 /model kimi-coding/kimi-for-coding
+/model kimi-coding/kimi-for-coding-highspeed
 ```
 
 Kimi keeps Coding models behind aliases. Rather than hardcoding a stale model list, this extension asks Kimi for the current model info when you log in or refresh. If your account is on a newer rollout (e.g., Kimi K2.7) or internal test, Pi can pick up the latest model name and context size without waiting for a package release.
@@ -123,7 +125,7 @@ Fallback values:
 - Input: text and image
 - Reasoning: enabled
 
-The provider maps Pi's reasoning levels to Kimi's `reasoning_effort` and top-level `thinking` parameters. The mapping refreshes automatically on credential refresh. Opening `/kimi-settings` also re-discovers the latest model metadata.
+The provider maps Pi's reasoning levels to Kimi's top-level `thinking` parameter. It sends `thinking.effort` only when `/models` advertises supported effort values. The mapping refreshes automatically on credential refresh. Opening `/kimi-settings` also re-discovers the latest model metadata.
 
 ## Optional tools
 
@@ -135,7 +137,7 @@ Inside Pi, run:
 /kimi-settings
 ```
 
-That command shows the current server-side model name (e.g. "K2.7 Code High Speed"), your Kimi usage summary, and lets you edit the home or project config. Changes apply to the active session tool set.
+That command shows the current server-side model name (e.g. "K2.7 Code High Speed"), your Kimi quota and Extra Usage balance, and lets you edit the home or project config. Changes apply to the active session tool set.
 
 Configurable settings include protocol mode, upload threshold, and per-tool enable/collapse.
 
@@ -277,7 +279,7 @@ Kimi's cache is **content-based**: it fires automatically when your prompt prefi
 - A timestamp, request ID, or randomized header is being interpolated into the prompt.
 - The first ~256 tokens of the prompt differ between turns.
 
-`PI_CACHE_RETENTION=none` skips `prompt_cache_key` injection but **does not** disable Kimi's caching (the cache is unconditional). For deterministic measurement, run `scripts/test_e2e.sh` with `KIMI_E2E_ONLY_CACHE=1`. See [docs/caching.md](docs/caching.md) for full mechanics.
+`PI_CACHE_RETENTION=none` skips `prompt_cache_key` injection but **does not** disable Kimi's caching (the cache is unconditional). For deterministic measurement, run a focused suite under `scripts/e2e/cache/`, starting with `scripts/e2e/cache/ttl.sh`. See [docs/caching.md](docs/caching.md) for full mechanics.
 
 ### OpenAI-compatible tools complain about a `developer` role
 

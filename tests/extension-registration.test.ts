@@ -219,6 +219,174 @@ describe("extension tool registration", () => {
     assert.ok(commands.has("kimi-settings"));
   });
 
+  it("registers standard and highspeed Coding models as separate selections", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+
+    await withCwd(cwd, () => registerKimiCodeExtension(pi));
+
+    const models = providerConfigs.get("kimi-coding")?.models ?? [];
+    assert.deepEqual(
+      models.map((model) => model.id),
+      ["kimi-for-coding", "kimi-for-coding-highspeed"],
+    );
+    assert.equal(models[0]?.cost.input, 0.897);
+    assert.equal(models[1]?.cost.input, 1.793);
+  });
+
+  it("applies discovered metadata to each registered Coding model", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+
+    await withCwd(cwd, () => registerKimiCodeExtension(pi));
+
+    const provider = providerConfigs.get("kimi-coding");
+    const modifyModels = provider?.oauth?.modifyModels;
+    assert.ok(modifyModels);
+    const models = modifyModels(
+      provider.models as never,
+      {
+        access: "oauth-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+        modelCatalog: {
+          "kimi-for-coding": {
+            wireModelId: "kimi-for-coding",
+            modelDisplay: "Kimi Standard",
+            contextLength: 262144,
+          },
+          "kimi-for-coding-highspeed": {
+            wireModelId: "kimi-for-coding-highspeed",
+            modelDisplay: "Kimi High Speed",
+            contextLength: 524288,
+            supportsVideoIn: true,
+          },
+        },
+      } as never,
+    );
+
+    assert.equal(models[0]?.name, "Kimi Standard");
+    assert.equal(models[1]?.name, "Kimi High Speed");
+    assert.equal(models[1]?.contextWindow, 524288);
+    assert.deepEqual(models[1]?.input, ["text", "image", "video"]);
+  });
+
+  it("removes Coding models that the authenticated catalog does not expose", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+
+    await withCwd(cwd, () => registerKimiCodeExtension(pi));
+
+    const provider = providerConfigs.get("kimi-coding");
+    const modifyModels = provider?.oauth?.modifyModels;
+    assert.ok(modifyModels);
+    const models = modifyModels(
+      provider.models as never,
+      {
+        access: "oauth-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+        modelCatalog: {
+          "kimi-for-coding": { wireModelId: "kimi-for-coding" },
+        },
+      } as never,
+    );
+
+    assert.deepEqual(
+      models.map((model) => model.id),
+      ["kimi-for-coding"],
+    );
+  });
+
+  it("registers only models exposed by a fresh authenticated catalog", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+    const auth = withTempAuthFile({
+      type: "oauth",
+      access: "oauth-token",
+      refresh: "refresh-token",
+      expires: Date.now() + 60_000,
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith("/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "kimi-for-coding" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    try {
+      await withCwd(cwd, () => registerKimiCodeExtension(pi));
+      assert.deepEqual(
+        providerConfigs.get("kimi-coding")?.models?.map((model) => model.id),
+        ["kimi-for-coding"],
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      auth.cleanup();
+    }
+  });
+
+  it("refreshes registered model availability when settings re-fetches the catalog", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { commands, pi, providerConfigs } = makePi();
+    const originalFetch = globalThis.fetch;
+    const originalKimiApiKey = process.env.KIMI_API_KEY;
+    process.env.KIMI_API_KEY = "test-key";
+    let modelRequests = 0;
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith("/models")) {
+        modelRequests++;
+        const ids =
+          modelRequests === 1
+            ? ["kimi-for-coding", "kimi-for-coding-highspeed"]
+            : ["kimi-for-coding"];
+        return new Response(JSON.stringify({ data: ids.map((id) => ({ id })) }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/usages")) {
+        return new Response(JSON.stringify({ usage: { limit: 100, remaining: 100 } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    try {
+      await withCwd(cwd, () => registerKimiCodeExtension(pi));
+      const kimiCommand = commands.get("kimi-settings");
+      assert.ok(kimiCommand);
+      await runSettingsHandler(
+        kimiCommand.handler,
+        {
+          cwd,
+          mode: "tui",
+          ui: { notify: () => {} },
+          reload: async () => {},
+        } as unknown as ExtensionCommandContext,
+        (_list, done) => done(),
+      );
+
+      assert.equal(modelRequests, 2);
+      assert.deepEqual(
+        providerConfigs.get("kimi-coding")?.models?.map((model) => model.id),
+        ["kimi-for-coding"],
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKimiApiKey === undefined) delete process.env.KIMI_API_KEY;
+      else process.env.KIMI_API_KEY = originalKimiApiKey;
+    }
+  });
+
   it("registers KIMI_API_KEY with explicit pi config-value env syntax", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const { pi, providerConfigs } = makePi();
