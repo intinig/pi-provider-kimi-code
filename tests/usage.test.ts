@@ -101,6 +101,20 @@ describe("parseUsageSummary", () => {
     ]);
   });
 
+  it("preserves fixed-point cents above JavaScript's safe integer range", () => {
+    const summary = parseUsageSummary({
+      boosterWallet: {
+        balance: {
+          type: "BOOSTER",
+          amount: "9007199255499999",
+          amountLeft: "9007199255499999",
+        },
+      },
+    });
+
+    assert.match(summary, /Balance: \$90071992\.55$/);
+  });
+
   it("formats limits-only payloads without a leading blank and normalizes window units", () => {
     const summary = parseUsageSummary({
       limits: [

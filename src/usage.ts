@@ -37,14 +37,14 @@ export interface UsageFormatOptions {
 }
 
 interface BoosterWalletInfo {
-  balanceCents: number;
+  balanceCents: bigint;
   monthlyChargeLimitEnabled: boolean;
-  monthlyChargeLimitCents: number;
-  monthlyUsedCents: number;
+  monthlyChargeLimitCents: bigint;
+  monthlyUsedCents: bigint;
   currency: string;
 }
 
-const FIXED_POINT_CENTS = 1_000_000;
+const FIXED_POINT_CENTS = 1_000_000n;
 
 export function getKimiUsageToken(): string | null {
   const credential = AuthStorage.create().get(PROVIDER_ID);
@@ -72,21 +72,22 @@ function getResetTime(record: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function toInteger(value: unknown): number | null {
-  const number = toNumber(value);
-  return number !== null && Number.isInteger(number) ? number : null;
+function toBigInt(value: unknown): bigint | null {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+  return null;
 }
 
-function fixedPointToCents(value: number): number {
-  const cents = value / FIXED_POINT_CENTS;
-  if (cents > 0 && cents < 1) return 1;
-  return Math.round(cents);
+function fixedPointToCents(value: bigint): bigint {
+  if (value > 0n && value < FIXED_POINT_CENTS) return 1n;
+  return (value + FIXED_POINT_CENTS / 2n) / FIXED_POINT_CENTS;
 }
 
-function parseMoney(value: unknown): { cents: number; currency: string } | null {
+function parseMoney(value: unknown): { cents: bigint; currency: string } | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const cents = toInteger(record.priceInCents);
+  const cents = toBigInt(record.priceInCents);
   if (cents === null) return null;
   return {
     cents,
@@ -101,35 +102,43 @@ function parseBoosterWallet(value: unknown): BoosterWalletInfo | null {
   if (typeof balance !== "object" || balance === null || Array.isArray(balance)) return null;
   const balanceRecord = balance as Record<string, unknown>;
   if (balanceRecord.type !== "BOOSTER") return null;
-  const amount = toInteger(balanceRecord.amount);
-  if (amount === null || amount <= 0) return null;
+  const amount = toBigInt(balanceRecord.amount);
+  if (amount === null || amount <= 0n) return null;
 
-  const amountLeft = toInteger(balanceRecord.amountLeft);
+  const amountLeft = toBigInt(balanceRecord.amountLeft);
   const monthlyLimit = parseMoney(record.monthlyChargeLimit);
   const monthlyUsed = parseMoney(record.monthlyUsed);
   return {
-    balanceCents: amountLeft === null ? 0 : fixedPointToCents(amountLeft),
+    balanceCents: amountLeft === null ? 0n : fixedPointToCents(amountLeft),
     monthlyChargeLimitEnabled: record.monthlyChargeLimitEnabled === true,
-    monthlyChargeLimitCents: monthlyLimit?.cents ?? 0,
-    monthlyUsedCents: monthlyUsed?.cents ?? 0,
+    monthlyChargeLimitCents: monthlyLimit?.cents ?? 0n,
+    monthlyUsedCents: monthlyUsed?.cents ?? 0n,
     currency: monthlyLimit?.currency || monthlyUsed?.currency || "USD",
   };
 }
 
-function formatCurrency(cents: number, currency: string): string {
+function formatCurrency(cents: bigint, currency: string): string {
   const symbol =
     currency.toUpperCase() === "USD" ? "$" : currency.toUpperCase() === "CNY" ? "¥" : "";
-  const amount = (cents / 100).toFixed(2);
+  const sign = cents < 0n ? "-" : "";
+  const absolute = cents < 0n ? -cents : cents;
+  const amount = `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
   return symbol ? `${symbol}${amount}` : `${amount} ${currency}`.trim();
 }
 
 function formatExtraUsage(info: BoosterWalletInfo): string[] {
-  const hasMonthlyLimit = info.monthlyChargeLimitEnabled && info.monthlyChargeLimitCents > 0;
+  const hasMonthlyLimit = info.monthlyChargeLimitEnabled && info.monthlyChargeLimitCents > 0n;
   const lines = ["Extra Usage"];
   if (hasMonthlyLimit) {
-    const used = Math.min(info.monthlyUsedCents, info.monthlyChargeLimitCents);
-    const percent = Math.round((used / info.monthlyChargeLimitCents) * 100);
-    lines.push(`${quotaBar(used, info.monthlyChargeLimitCents)} ${percent}% used`);
+    const used =
+      info.monthlyUsedCents < info.monthlyChargeLimitCents
+        ? info.monthlyUsedCents
+        : info.monthlyChargeLimitCents;
+    const percent = Number(
+      (used * 100n + info.monthlyChargeLimitCents / 2n) / info.monthlyChargeLimitCents,
+    );
+    const barUnits = Number((used * 400n) / info.monthlyChargeLimitCents);
+    lines.push(`${quotaBar(barUnits, 400)} ${percent}% used`);
   }
   lines.push(`Used this month: ${formatCurrency(info.monthlyUsedCents, info.currency)}`);
   lines.push(
