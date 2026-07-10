@@ -277,7 +277,7 @@ Kimi's cache is **content-based**: it fires automatically when your prompt prefi
 - A timestamp, request ID, or randomized header is being interpolated into the prompt.
 - The first ~256 tokens of the prompt differ between turns.
 
-`PI_CACHE_RETENTION=none` skips `prompt_cache_key` injection but **does not** disable Kimi's caching (the cache is unconditional). For deterministic measurement, run `scripts/test_e2e.sh` with `KIMI_E2E_ONLY_CACHE=1`. See [docs/caching.md](docs/caching.md) for full mechanics.
+`PI_CACHE_RETENTION=none` skips `prompt_cache_key` injection but **does not** disable Kimi's caching (the cache is unconditional). For deterministic measurement, run a focused suite under `scripts/e2e/cache/`, starting with `scripts/e2e/cache/ttl.sh`. See [docs/caching.md](docs/caching.md) for full mechanics.
 
 ### OpenAI-compatible tools complain about a `developer` role
 

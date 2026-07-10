@@ -32,6 +32,16 @@ function tryParseJson(buffer) {
   }
 }
 
+function redactHeaders(headers) {
+  const redacted = { ...headers };
+  for (const name of Object.keys(redacted)) {
+    if (["authorization", "x-api-key"].includes(name.toLowerCase())) {
+      redacted[name] = "<redacted>";
+    }
+  }
+  return redacted;
+}
+
 function writeJson(path, value) {
   const out = createWriteStream(path, { flags: "w", encoding: "utf8" });
   out.end(`${JSON.stringify(value, null, 2)}\n`);
@@ -60,8 +70,13 @@ const server = http.createServer(async (req, res) => {
     method: req.method,
     url: req.url,
     httpVersion: req.httpVersion,
-    rawHeaders: req.rawHeaders,
-    headers: req.headers,
+    rawHeaders: req.rawHeaders.map((value, index) =>
+      index % 2 === 1 &&
+      ["authorization", "x-api-key"].includes(req.rawHeaders[index - 1].toLowerCase())
+        ? "<redacted>"
+        : value,
+    ),
+    headers: redactHeaders(req.headers),
     bodyUtf8: body.toString("utf8"),
     bodyBase64: body.toString("base64"),
     bodyJson: tryParseJson(body),
@@ -90,7 +105,7 @@ const server = http.createServer(async (req, res) => {
         statusCode: upstreamRes.statusCode,
         statusMessage: upstreamRes.statusMessage,
         rawHeaders: upstreamRes.rawHeaders,
-        headers: upstreamRes.headers,
+        headers: redactHeaders(upstreamRes.headers),
         bodyUtf8: responseBody.toString("utf8"),
         bodyBase64: responseBody.toString("base64"),
         bodyJson: tryParseJson(responseBody),

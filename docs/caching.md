@@ -1,8 +1,8 @@
 # Kimi Coding endpoint cache behavior
 
-Empirical findings from [`scripts/test_e2e.sh`](../scripts/test_e2e.sh) —
-tests 4 and 4a–4s (4h and 4r are opt-in long-running probes, executed
-once for the data below). Numbers below come from real runs against
+Empirical findings from the focused cache suites under
+[`scripts/e2e/cache/`](../scripts/e2e/cache/) (the 30-minute TTL and
+very-large-context probes are opt-in). Numbers below come from real runs against
 `https://api.kimi.com/coding/v1/messages` and `/coding/v1/chat/completions`
 using `kimi-for-coding`.
 
