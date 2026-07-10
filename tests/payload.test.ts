@@ -371,7 +371,7 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.max_completion_tokens, undefined);
   });
 
-  it("lets model config maxCompletionTokens override payload max_tokens", async () => {
+  it("keeps the lower request-time output cap when config sets a larger maximum", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],
       max_tokens: 128,
@@ -386,7 +386,20 @@ describe("applyKimiPayloadMutations", () => {
     );
 
     assert.equal(payload.max_tokens, undefined);
-    assert.equal(payload.max_completion_tokens, 32000);
+    assert.equal(payload.max_completion_tokens, 128);
+
+    const largerPayload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      max_completion_tokens: 64000,
+    };
+    await applyKimiPayloadMutations(
+      largerPayload,
+      baseCtx({
+        api: "openai-completions",
+        modelConfig: { ...defaultModelConfig, generation: { maxCompletionTokens: 32000 } },
+      }),
+    );
+    assert.equal(largerPayload.max_completion_tokens, 32000);
   });
 
   it("suppresses reasoning fields when supportsThinkingType is 'no'", async () => {

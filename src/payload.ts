@@ -438,7 +438,10 @@ export async function applyKimiPayloadMutations(
   if (generation.temperature !== undefined) payload.temperature = generation.temperature;
   if (generation.topP !== undefined) payload.top_p = generation.topP;
   if (generation.maxCompletionTokens !== undefined) {
-    payload.max_completion_tokens = generation.maxCompletionTokens;
+    payload.max_completion_tokens =
+      typeof payload.max_completion_tokens === "number"
+        ? Math.min(payload.max_completion_tokens, generation.maxCompletionTokens)
+        : generation.maxCompletionTokens;
   }
 
   // 5. Spread extra_body into top-level payload before reasoning mapping,
