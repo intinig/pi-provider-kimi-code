@@ -371,6 +371,24 @@ describe("applyKimiPayloadMutations", () => {
     assert.equal(payload.max_completion_tokens, undefined);
   });
 
+  it("caps Anthropic max_tokens without adding OpenAI fields", async () => {
+    const payload: JsonRecord = {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 64000,
+    };
+
+    await applyKimiPayloadMutations(
+      payload,
+      baseCtx({
+        api: "anthropic-messages",
+        modelConfig: { ...defaultModelConfig, generation: { maxCompletionTokens: 32000 } },
+      }),
+    );
+
+    assert.equal(payload.max_tokens, 32000);
+    assert.equal(payload.max_completion_tokens, undefined);
+  });
+
   it("keeps the lower request-time output cap when config sets a larger maximum", async () => {
     const payload: JsonRecord = {
       messages: [{ role: "user", content: "hi" }],

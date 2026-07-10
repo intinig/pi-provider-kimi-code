@@ -438,9 +438,11 @@ export async function applyKimiPayloadMutations(
   if (generation.temperature !== undefined) payload.temperature = generation.temperature;
   if (generation.topP !== undefined) payload.top_p = generation.topP;
   if (generation.maxCompletionTokens !== undefined) {
-    payload.max_completion_tokens =
-      typeof payload.max_completion_tokens === "number"
-        ? Math.min(payload.max_completion_tokens, generation.maxCompletionTokens)
+    const maxTokensKey = ctx.api === "anthropic-messages" ? "max_tokens" : "max_completion_tokens";
+    const currentMaxTokens = payload[maxTokensKey];
+    payload[maxTokensKey] =
+      typeof currentMaxTokens === "number"
+        ? Math.min(currentMaxTokens, generation.maxCompletionTokens)
         : generation.maxCompletionTokens;
   }
 
