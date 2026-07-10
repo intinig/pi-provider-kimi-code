@@ -36,6 +36,16 @@ export interface UsageFormatOptions {
   timeZone?: string;
 }
 
+interface BoosterWalletInfo {
+  balanceCents: number;
+  monthlyChargeLimitEnabled: boolean;
+  monthlyChargeLimitCents: number;
+  monthlyUsedCents: number;
+  currency: string;
+}
+
+const FIXED_POINT_CENTS = 1_000_000;
+
 export function getKimiUsageToken(): string | null {
   const credential = AuthStorage.create().get(PROVIDER_ID);
   if (credential?.type === "oauth" && credential.access) return credential.access;
@@ -60,6 +70,73 @@ function getResetTime(record: Record<string, unknown>): string | undefined {
     if (value) return value;
   }
   return undefined;
+}
+
+function toInteger(value: unknown): number | null {
+  const number = toNumber(value);
+  return number !== null && Number.isInteger(number) ? number : null;
+}
+
+function fixedPointToCents(value: number): number {
+  const cents = value / FIXED_POINT_CENTS;
+  if (cents > 0 && cents < 1) return 1;
+  return Math.round(cents);
+}
+
+function parseMoney(value: unknown): { cents: number; currency: string } | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const cents = toInteger(record.priceInCents);
+  if (cents === null) return null;
+  return {
+    cents,
+    currency: typeof record.currency === "string" ? record.currency : "",
+  };
+}
+
+function parseBoosterWallet(value: unknown): BoosterWalletInfo | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const balance = record.balance;
+  if (typeof balance !== "object" || balance === null || Array.isArray(balance)) return null;
+  const balanceRecord = balance as Record<string, unknown>;
+  if (balanceRecord.type !== "BOOSTER") return null;
+  const amount = toInteger(balanceRecord.amount);
+  if (amount === null || amount <= 0) return null;
+
+  const amountLeft = toInteger(balanceRecord.amountLeft);
+  const monthlyLimit = parseMoney(record.monthlyChargeLimit);
+  const monthlyUsed = parseMoney(record.monthlyUsed);
+  return {
+    balanceCents: amountLeft === null ? 0 : fixedPointToCents(amountLeft),
+    monthlyChargeLimitEnabled: record.monthlyChargeLimitEnabled === true,
+    monthlyChargeLimitCents: monthlyLimit?.cents ?? 0,
+    monthlyUsedCents: monthlyUsed?.cents ?? 0,
+    currency: monthlyLimit?.currency || monthlyUsed?.currency || "USD",
+  };
+}
+
+function formatCurrency(cents: number, currency: string): string {
+  const symbol =
+    currency.toUpperCase() === "USD" ? "$" : currency.toUpperCase() === "CNY" ? "¥" : "";
+  const amount = (cents / 100).toFixed(2);
+  return symbol ? `${symbol}${amount}` : `${amount} ${currency}`.trim();
+}
+
+function formatExtraUsage(info: BoosterWalletInfo): string[] {
+  const hasMonthlyLimit = info.monthlyChargeLimitEnabled && info.monthlyChargeLimitCents > 0;
+  const lines = ["Extra Usage"];
+  if (hasMonthlyLimit) {
+    const used = Math.min(info.monthlyUsedCents, info.monthlyChargeLimitCents);
+    const percent = Math.round((used / info.monthlyChargeLimitCents) * 100);
+    lines.push(`${quotaBar(used, info.monthlyChargeLimitCents)} ${percent}% used`);
+  }
+  lines.push(`Used this month: ${formatCurrency(info.monthlyUsedCents, info.currency)}`);
+  lines.push(
+    `Monthly limit: ${hasMonthlyLimit ? formatCurrency(info.monthlyChargeLimitCents, info.currency) : "Unlimited"}`,
+  );
+  lines.push(`Balance: ${formatCurrency(info.balanceCents, info.currency)}`);
+  return lines;
 }
 
 export function parseUsageRow(value: unknown, fallbackLabel: string): UsageRow | null {
@@ -113,6 +190,12 @@ export function parseUsageSummary(payload: unknown, options: UsageFormatOptions 
         lines.push(formatUsageRow(row, options));
       }
     }
+  }
+
+  const extraUsage = parseBoosterWallet(record.boosterWallet);
+  if (extraUsage) {
+    if (lines.length > 0) lines.push("");
+    lines.push(...formatExtraUsage(extraUsage));
   }
 
   while (lines.at(-1) === "") lines.pop();

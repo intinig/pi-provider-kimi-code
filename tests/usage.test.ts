@@ -78,6 +78,29 @@ describe("parseUsageSummary", () => {
     ]);
   });
 
+  it("formats Extra Usage balance and monthly spending", () => {
+    const summary = parseUsageSummary({
+      boosterWallet: {
+        balance: {
+          type: "BOOSTER",
+          amount: "20000000000",
+          amountLeft: "10000000000",
+        },
+        monthlyChargeLimitEnabled: true,
+        monthlyChargeLimit: { currency: "USD", priceInCents: "20000" },
+        monthlyUsed: { currency: "USD", priceInCents: "5000" },
+      },
+    });
+
+    assert.deepEqual(summary.split("\n"), [
+      "Extra Usage",
+      "████████████▌                                      25% used",
+      "Used this month: $50.00",
+      "Monthly limit: $200.00",
+      "Balance: $100.00",
+    ]);
+  });
+
   it("formats limits-only payloads without a leading blank and normalizes window units", () => {
     const summary = parseUsageSummary({
       limits: [
