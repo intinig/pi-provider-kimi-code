@@ -340,8 +340,10 @@ else:
     print("Verdict 1: chain growth broken (see flags above).")
 
 # V2: persistence
-persistence_ok = all(r["cache_read"] > 0 for r in reprobes.values())
-if persistence_ok:
+missing_reprobes = sorted({1, 3} - set(reprobes))
+if missing_reprobes:
+    print(f"Verdict 2: INCONCLUSIVE. Re-probe requests failed for turn(s) {missing_reprobes}.")
+elif all(r["cache_read"] > 0 for r in reprobes.values()):
     print("Verdict 2: OLD PREFIXES PERSIST. Re-sending earlier turns still HITs after newer turns were cached.")
 else:
     miss = [n for n, r in reprobes.items() if r["cache_read"] == 0]

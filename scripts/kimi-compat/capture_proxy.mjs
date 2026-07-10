@@ -42,6 +42,14 @@ function redactHeaders(headers) {
   return redacted;
 }
 
+function redactRawHeaders(rawHeaders) {
+  return rawHeaders.map((value, index) =>
+    index % 2 === 1 && ["authorization", "x-api-key"].includes(rawHeaders[index - 1].toLowerCase())
+      ? "<redacted>"
+      : value,
+  );
+}
+
 function writeJson(path, value) {
   const out = createWriteStream(path, { flags: "w", encoding: "utf8" });
   out.end(`${JSON.stringify(value, null, 2)}\n`);
@@ -70,12 +78,7 @@ const server = http.createServer(async (req, res) => {
     method: req.method,
     url: req.url,
     httpVersion: req.httpVersion,
-    rawHeaders: req.rawHeaders.map((value, index) =>
-      index % 2 === 1 &&
-      ["authorization", "x-api-key"].includes(req.rawHeaders[index - 1].toLowerCase())
-        ? "<redacted>"
-        : value,
-    ),
+    rawHeaders: redactRawHeaders(req.rawHeaders),
     headers: redactHeaders(req.headers),
     bodyUtf8: body.toString("utf8"),
     bodyBase64: body.toString("base64"),
@@ -104,7 +107,7 @@ const server = http.createServer(async (req, res) => {
         id,
         statusCode: upstreamRes.statusCode,
         statusMessage: upstreamRes.statusMessage,
-        rawHeaders: upstreamRes.rawHeaders,
+        rawHeaders: redactRawHeaders(upstreamRes.rawHeaders),
         headers: redactHeaders(upstreamRes.headers),
         bodyUtf8: responseBody.toString("utf8"),
         bodyBase64: responseBody.toString("base64"),

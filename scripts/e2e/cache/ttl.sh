@@ -45,23 +45,6 @@ long_text = (
     ("This is meaningless filler text for testing Kimi Prompt Cache TTL. " * repeat) +
     "\n\nReply with only: ok"
 )
-payload = {
-    "model": os.environ["KIMI_E2E_WIRE_MODEL"],
-    "max_tokens": 100,
-    "prompt_cache_key": cache_key,
-    "messages": [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": long_text,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-        }
-    ],
-}
 headers = {
     "x-api-key": api_key,
     "anthropic-version": "2023-06-01",
@@ -120,10 +103,14 @@ def run_probe(target):
     round_key = f"{cache_key}-{target}s"
     p = make_payload(round_key)
     print(f"--- Round {target}s: warmup (key={round_key}) ---", flush=True)
-    send(f"warmup_{target}s", p)
+    warmup_cache_read = send(f"warmup_{target}s", p)
+    if warmup_cache_read < 0:
+        raise RuntimeError(f"warmup failed for {target}s probe")
     print(f"[round {target}s] sleeping {target}s...", flush=True)
     time.sleep(target)
     cache_read = send(f"probe_at_{target}s", p)
+    if cache_read < 0:
+        raise RuntimeError(f"request failed for {target}s probe")
     hit = cache_read > 0
     print(f"[round {target}s] result: {'HIT' if hit else 'MISS'}\n", flush=True)
     return (target, hit)

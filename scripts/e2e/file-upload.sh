@@ -63,8 +63,10 @@ PYIMG
 
   log "Uploading to ${BASE_URL}/files ..."
 
+  local upload_resp
+  upload_resp="$(mktemp -t kimi_e2e_upload_resp_XXXXXX.json)"
   local http_code
-  http_code=$(curl -s -o /tmp/kimi_e2e_upload_resp.json -w "%{http_code}" \
+  http_code=$(curl -s -o "$upload_resp" -w "%{http_code}" \
     -X POST "${BASE_URL}/files" \
     -H "Authorization: Bearer ${KIMI_API_KEY}" \
     "${KIMI_HEADERS[@]}" \
@@ -75,16 +77,16 @@ PYIMG
 
   if [ "$http_code" != "200" ] && [ "$http_code" != "201" ]; then
     log "Upload FAILED (status=$http_code)"
-    cat /tmp/kimi_e2e_upload_resp.json 2>/dev/null
-    rm -f /tmp/kimi_e2e_upload_resp.json
+    cat "$upload_resp" 2>/dev/null
+    rm -f "$upload_resp"
     printf '\n'
     return 1
   fi
 
   local file_id
-  file_id=$(python3 -c "import json; d=json.load(open('/tmp/kimi_e2e_upload_resp.json')); print(d.get('id',''))")
+  file_id=$(python3 -c "import json, sys; d=json.load(open(sys.argv[1])); print(d.get('id',''))" "$upload_resp")
   log "Upload OK (status=$http_code). file_id=$file_id  ms_url=ms://$file_id"
-  rm -f /tmp/kimi_e2e_upload_resp.json
+  rm -f "$upload_resp"
 
   # Visual verification: ask the model what text/code is in the image
   log "Verifying: asking model to read the watermark code from uploaded image..."
@@ -158,8 +160,10 @@ print(json.dumps({
     log "+ POST ${BASE_URL}/chat/completions with prompt_cache_key=$test_cache_key"
   fi
 
+  local cache_resp
+  cache_resp="$(mktemp -t kimi_e2e_cache_resp_XXXXXX.json)"
   local http_code
-  http_code=$(curl -s -o /tmp/kimi_e2e_cache_resp.json -w "%{http_code}" \
+  http_code=$(curl -s -o "$cache_resp" -w "%{http_code}" \
     -X POST "${BASE_URL}/chat/completions" \
     -H "Authorization: Bearer ${KIMI_API_KEY}" \
     -H "Content-Type: application/json" \
@@ -168,13 +172,13 @@ print(json.dumps({
 
   if [ "$http_code" = "200" ]; then
     local usage
-    usage=$(python3 -c "import json; d=json.load(open('/tmp/kimi_e2e_cache_resp.json')); print(json.dumps(d.get('usage',{}), ensure_ascii=False))")
+    usage=$(python3 -c "import json, sys; d=json.load(open(sys.argv[1])); print(json.dumps(d.get('usage',{}), ensure_ascii=False))" "$cache_resp")
     log "Cache key injection OK (status=200). usage=$usage"
   else
     log "Request failed (status=$http_code)"
-    cat /tmp/kimi_e2e_cache_resp.json 2>/dev/null
+    cat "$cache_resp" 2>/dev/null
   fi
-  rm -f /tmp/kimi_e2e_cache_resp.json
+  rm -f "$cache_resp"
   printf '\n'
 }
 

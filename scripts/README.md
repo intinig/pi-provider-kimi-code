@@ -4,12 +4,12 @@ This directory contains local checks, live Kimi API contract suites, Pi provider
 
 ## Entry Points
 
-| Script                     | Scope                     | Responsibility                                                          | Side effects                                                  |
-| -------------------------- | ------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `test_e2e.sh`              | All live E2E suites       | Runs the focused E2E suites in their defined order.                     | Sends live API requests; cache suites can be slow and costly. |
-| `list_models.sh`           | Compatibility entry point | Runs `e2e/model-contract.sh`.                                           | Reads the live model catalog.                                 |
-| `test_payload_thinking.sh` | Compatibility entry point | Runs `e2e/thinking-effort-contract.sh`.                                 | Sends one request per selected protocol.                      |
-| `probe_model.sh`           | Manual model probe        | Sends a targeted request for a specified model and prints the response. | Sends a live API request.                                     |
+| Script                     | Scope                     | Responsibility                                             | Side effects                                                  |
+| -------------------------- | ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
+| `test_e2e.sh`              | All live E2E suites       | Runs the focused E2E suites in their defined order.        | Sends live API requests; cache suites can be slow and costly. |
+| `list_models.sh`           | Compatibility entry point | Runs `e2e/model-contract.sh`.                              | Reads the live model catalog.                                 |
+| `test_payload_thinking.sh` | Compatibility entry point | Runs `e2e/thinking-effort-contract.sh`.                    | Sends one request per selected protocol.                      |
+| `probe_model.sh`           | Manual model probe        | Probes a specified model through both supported protocols. | Sends two live API requests, one per protocol.                |
 
 ## Focused E2E Suites
 
