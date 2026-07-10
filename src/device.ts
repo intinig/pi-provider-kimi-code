@@ -183,8 +183,27 @@ export function getCommonHeaders(): Record<string, string> {
   ) as Record<string, string>;
 }
 
+const RESERVED_PROVIDER_HEADERS = new Set([
+  "accept",
+  "anthropic-version",
+  "authorization",
+  "content-type",
+  "user-agent",
+  "x-api-key",
+]);
+
+function isReservedProviderHeader(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return RESERVED_PROVIDER_HEADERS.has(normalized) || normalized.startsWith("x-msh-");
+}
+
 export function getKimiProviderHeaders(
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
-  return { ...parseKimiCodeCustomHeaders(env), ...getCommonHeaders() };
+  const customHeaders = Object.fromEntries(
+    Object.entries(parseKimiCodeCustomHeaders(env)).filter(
+      ([name]) => !isReservedProviderHeader(name),
+    ),
+  );
+  return { ...customHeaders, ...getCommonHeaders() };
 }

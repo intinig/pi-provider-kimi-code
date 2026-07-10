@@ -45,11 +45,15 @@ describe("getCommonHeaders", () => {
 describe("getKimiProviderHeaders", () => {
   it("applies custom provider headers below Kimi identity headers", () => {
     const headers = getKimiProviderHeaders({
-      KIMI_CODE_CUSTOM_HEADERS: "X-Gateway: internal\nUser-Agent: overridden\ninvalid",
+      KIMI_CODE_CUSTOM_HEADERS:
+        "X-Gateway: internal\nUser-Agent: overridden\nauthorization: leaked\nx-msh-version: fake\ncontent-type: text/plain\ninvalid",
     });
 
     assert.equal(headers["X-Gateway"], "internal");
     assert.equal(headers["User-Agent"], `kimi-code-cli/${KIMI_UPSTREAM_VERSION}`);
+    assert.equal(headers.authorization, undefined);
+    assert.equal(headers["x-msh-version"], undefined);
+    assert.equal(headers["content-type"], undefined);
   });
 });
 
