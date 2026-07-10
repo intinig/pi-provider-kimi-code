@@ -1,7 +1,7 @@
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
 import { PROVIDER_ID, getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 import { refreshKimiAuthToken } from "./oauth.ts";
 
 const MEMBERSHIP_LEVEL_NAMES: Record<string, string> = {
@@ -327,7 +327,7 @@ function fetchKimiUsage(token: string, signal: AbortSignal): Promise<Response> {
   return fetch(buildKimiUsageUrl(), {
     method: "GET",
     headers: {
-      ...getCommonHeaders(),
+      ...getKimiProviderHeaders(),
       Authorization: `Bearer ${token}`,
     },
     signal,

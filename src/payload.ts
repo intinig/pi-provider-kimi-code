@@ -6,7 +6,7 @@ import type { CacheRetention, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { KimiResolvedModelConfig, ModelReasoningEntry } from "./config.ts";
 
 import { getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 import { optimizeToolSchemas } from "./schema-dedup.ts";
 
 // =============================================================================
@@ -116,7 +116,7 @@ export async function uploadKimiFile(
   try {
     const response = await fetch(uploadUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, ...getCommonHeaders() },
+      headers: { ...getKimiProviderHeaders(), Authorization: `Bearer ${apiKey}` },
       body: formData,
     });
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);

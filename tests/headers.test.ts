@@ -2,7 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import { KIMI_UPSTREAM_VERSION } from "../src/constants.ts";
-import { asciiHeaderValue, getCommonHeaders, getOsVersion } from "../src/device.ts";
+import {
+  asciiHeaderValue,
+  getCommonHeaders,
+  getKimiProviderHeaders,
+  getOsVersion,
+} from "../src/device.ts";
 import { buildModelsUrl } from "../src/models.ts";
 
 describe("asciiHeaderValue", () => {
@@ -34,6 +39,17 @@ describe("getCommonHeaders", () => {
     assert.equal(headers["X-Msh-Platform"], "kimi_code_cli");
     assert.equal(headers["User-Agent"], `kimi-code-cli/${KIMI_UPSTREAM_VERSION}`);
     assert.equal(headers["X-Msh-Version"], KIMI_UPSTREAM_VERSION);
+  });
+});
+
+describe("getKimiProviderHeaders", () => {
+  it("applies custom provider headers below Kimi identity headers", () => {
+    const headers = getKimiProviderHeaders({
+      KIMI_CODE_CUSTOM_HEADERS: "X-Gateway: internal\nUser-Agent: overridden\ninvalid",
+    });
+
+    assert.equal(headers["X-Gateway"], "internal");
+    assert.equal(headers["User-Agent"], `kimi-code-cli/${KIMI_UPSTREAM_VERSION}`);
   });
 });
 

@@ -152,6 +152,22 @@ function getStableDeviceId(): string {
   return DEVICE_ID;
 }
 
+export function parseKimiCodeCustomHeaders(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const raw = env.KIMI_CODE_CUSTOM_HEADERS?.trim();
+  if (!raw) return {};
+  const headers: Record<string, string> = {};
+  for (const line of raw.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const name = line.slice(0, colon).trim();
+    if (!name) continue;
+    headers[name] = line.slice(colon + 1).trim();
+  }
+  return headers;
+}
+
 export function getCommonHeaders(): Record<string, string> {
   const headers = {
     "User-Agent": KIMI_CODE_USER_AGENT,
@@ -165,4 +181,10 @@ export function getCommonHeaders(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(headers).map(([key, value]) => [key, asciiHeaderValue(value)]),
   ) as Record<string, string>;
+}
+
+export function getKimiProviderHeaders(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  return { ...parseKimiCodeCustomHeaders(env), ...getCommonHeaders() };
 }

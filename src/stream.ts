@@ -24,7 +24,7 @@ import {
 } from "./config.ts";
 
 import { ENV_KIMI_CODE_PROTOCOL, getApiProtocol, getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 import { isKimiAuthErrorMessage, refreshKimiAuthToken } from "./oauth.ts";
 import {
   type Uploader,
@@ -163,7 +163,7 @@ export function resolveKimiApiKey(apiKey: string | undefined): string {
 }
 
 export function mergeKimiRequestHeaders(headers?: Record<string, string>): Record<string, string> {
-  return { ...getCommonHeaders(), ...headers };
+  return { ...getKimiProviderHeaders(), ...headers };
 }
 
 export function streamSimpleKimi(

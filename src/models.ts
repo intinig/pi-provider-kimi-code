@@ -5,7 +5,7 @@ import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
 import type { KimiInputModality, KimiResolvedModelConfig, ModelConfig } from "./config.ts";
 
 import { type KimiWireProtocol, getBaseUrl } from "./constants.ts";
-import { getCommonHeaders } from "./device.ts";
+import { getKimiProviderHeaders } from "./device.ts";
 
 export interface KimiModelMetadata {
   wireModelId?: string;
@@ -188,7 +188,7 @@ export async function discoverKimiModelMetadata(
     const response = await fetch(getModelsUrl(protocol), {
       signal: controller.signal,
       headers: {
-        ...getCommonHeaders(),
+        ...getKimiProviderHeaders(),
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
       },
