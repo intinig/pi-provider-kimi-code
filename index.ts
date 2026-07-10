@@ -138,13 +138,13 @@ function applyEffectiveKimiRuntimeConfig(
   return config;
 }
 
-async function refreshModelExtras(state: KimiRuntimeState): Promise<void> {
+async function refreshModelExtras(state: KimiRuntimeState): Promise<boolean> {
   const token = getKimiUsageToken();
-  if (!token) return;
+  if (!token) return false;
   const extras = await discoverKimiModelMetadata(token, state.config.protocol);
-  if (Object.keys(extras).length > 0) {
-    Object.assign(state.modelExtras, extras);
-  }
+  if (Object.keys(extras).length === 0) return false;
+  Object.assign(state.modelExtras, extras);
+  return true;
 }
 
 async function openSettingsMenu(
@@ -152,7 +152,11 @@ async function openSettingsMenu(
   ctx: ExtensionCommandContext,
   state: KimiRuntimeState,
 ): Promise<void> {
-  const [usage] = await Promise.all([fetchKimiUsageSummary(), refreshModelExtras(state)]);
+  const [usage, modelsRefreshed] = await Promise.all([
+    fetchKimiUsageSummary(),
+    refreshModelExtras(state),
+  ]);
+  if (modelsRefreshed) registerKimiProvider(pi, state);
 
   const projectTrusted = await isKimiProjectConfigApproved(ctx, ctx.cwd);
   const homeDraft = loadHomeKimiCodeConfig(os.homedir());
@@ -360,6 +364,14 @@ function saveScopeKimiCodeConfig(
   }
 }
 
+function filterAvailableKimiModels<T extends { id: string }>(
+  models: T[],
+  extras: KimiOAuthExtras,
+): T[] {
+  const available = extras.modelCatalog ? new Set(Object.keys(extras.modelCatalog)) : null;
+  return available ? models.filter((model) => available.has(model.id)) : models;
+}
+
 function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
   const standardModel = applyKimiOAuthExtrasToModel(
     buildKimiModelFromConfig(state.config.model),
@@ -376,7 +388,7 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
     api: getKimiApiType(state.config.protocol),
     streamSimple: streamSimpleKimi,
 
-    models: [standardModel, highSpeedModel],
+    models: filterAvailableKimiModels([standardModel, highSpeedModel], state.modelExtras),
 
     oauth: {
       name: "Kimi Code (OAuth)",
@@ -392,12 +404,9 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
         const extras = cred as KimiOAuthCredentials;
         state.modelExtras = extras;
         reloadEffectiveKimiRuntimeConfig(state, state.cwd, state.projectTrusted);
-        const available = extras.modelCatalog ? new Set(Object.keys(extras.modelCatalog)) : null;
-        return models
-          .filter((model) => !available || available.has(model.id))
-          .map((model) =>
-            applyKimiOAuthExtrasToModel(model, getKimiModelMetadata(extras, model.id)),
-          );
+        return filterAvailableKimiModels(models, extras).map((model) =>
+          applyKimiOAuthExtrasToModel(model, getKimiModelMetadata(extras, model.id)),
+        );
       },
     },
   });
