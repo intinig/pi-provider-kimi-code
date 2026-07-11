@@ -244,7 +244,7 @@ describe("extension tool registration", () => {
     const modifyModels = provider?.oauth?.modifyModels;
     assert.ok(modifyModels);
     const models = modifyModels(
-      provider.models as never,
+      provider.models?.map((model) => ({ ...model, provider: "kimi-coding" })) as never,
       {
         access: "oauth-token",
         refresh: "refresh-token",
@@ -271,7 +271,7 @@ describe("extension tool registration", () => {
     assert.deepEqual(models[1]?.input, ["text", "image", "video"]);
   });
 
-  it("removes Coding models that the authenticated catalog does not expose", async () => {
+  it("regression: removes unavailable Kimi models without removing other providers", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const { pi, providerConfigs } = makePi();
 
@@ -280,8 +280,12 @@ describe("extension tool registration", () => {
     const provider = providerConfigs.get("kimi-coding");
     const modifyModels = provider?.oauth?.modifyModels;
     assert.ok(modifyModels);
+    const foreignModel = { id: "gpt-5.4", provider: "openai-codex" };
     const models = modifyModels(
-      provider.models as never,
+      [
+        ...(provider.models ?? []).map((model) => ({ ...model, provider: "kimi-coding" })),
+        foreignModel,
+      ] as never,
       {
         access: "oauth-token",
         refresh: "refresh-token",
@@ -294,8 +298,9 @@ describe("extension tool registration", () => {
 
     assert.deepEqual(
       models.map((model) => model.id),
-      ["kimi-for-coding"],
+      ["kimi-for-coding", "gpt-5.4"],
     );
+    assert.equal(models[1], foreignModel);
   });
 
   it("registers only models exposed by a fresh authenticated catalog", async () => {
