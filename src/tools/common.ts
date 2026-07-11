@@ -3,7 +3,7 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 
 import { PROVIDER_ID, getBaseUrl } from "../constants.ts";
 import { getKimiProviderHeaders } from "../device.ts";
-import { refreshKimiAuthToken } from "../oauth.ts";
+import { KIMI_LOGIN_REQUIRED_MESSAGE, refreshKimiAuthToken } from "../oauth.ts";
 
 export const KIMI_TOOL_TIMEOUT_MS = 180_000;
 
@@ -94,7 +94,9 @@ export async function fetchWithAuthRetry(
   if (response.status !== 401) return response;
 
   const refreshed = await deps.refreshAccessToken(accessToken);
-  if (!refreshed || refreshed === accessToken) return response;
+  if (!refreshed || refreshed === accessToken) {
+    throw new Error(KIMI_LOGIN_REQUIRED_MESSAGE);
+  }
   return request(refreshed);
 }
 

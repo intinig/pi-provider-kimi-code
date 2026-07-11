@@ -404,9 +404,16 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
         const extras = cred as KimiOAuthCredentials;
         state.modelExtras = extras;
         reloadEffectiveKimiRuntimeConfig(state, state.cwd, state.projectTrusted);
-        return filterAvailableKimiModels(models, extras).map((model) =>
-          applyKimiOAuthExtrasToModel(model, getKimiModelMetadata(extras, model.id)),
-        );
+        const available = extras.modelCatalog ? new Set(Object.keys(extras.modelCatalog)) : null;
+        return models
+          .filter(
+            (model) => model.provider !== PROVIDER_ID || !available || available.has(model.id),
+          )
+          .map((model) =>
+            model.provider === PROVIDER_ID
+              ? applyKimiOAuthExtrasToModel(model, getKimiModelMetadata(extras, model.id))
+              : model,
+          );
       },
     },
   });

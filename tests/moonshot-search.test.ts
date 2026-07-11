@@ -140,6 +140,38 @@ describe("moonshot_search", () => {
     assert.deepEqual(result.details, []);
   });
 
+  it("regression: prompts for login when token refresh cannot recover from 401", async () => {
+    const tool = buildMoonshotSearchTool({
+      deps: {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                type: "invalid_authentication_error",
+                message: "The API Key appears to be invalid or may have expired",
+              },
+            }),
+            { status: 401 },
+          ),
+        getAccessToken: () => "revoked-token",
+        refreshAccessToken: async () => null,
+      },
+    });
+
+    const result = await tool.execute(
+      "tool-call-1",
+      { query: "kimi code" },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+
+    assert.equal(
+      result.content[0]?.type === "text" ? result.content[0].text : "",
+      "Moonshot search failed: Kimi Code authorization is no longer valid. Sign in again with /login kimi-coding.",
+    );
+  });
+
   it("returns an error result when OAuth credentials are missing", async () => {
     const tool = buildMoonshotSearchTool({
       deps: {
