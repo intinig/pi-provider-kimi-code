@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   buildKimiUsageUrl,
@@ -42,9 +45,26 @@ describe("buildKimiUsageUrl", () => {
 describe("fetchKimiUsageSnapshot", () => {
   it("bounds OAuth refresh by the usage timeout", { timeout: 1000 }, async () => {
     const originalFetch = globalThis.fetch;
-    const originalApiKey = process.env.KIMI_API_KEY;
+    const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const originalKimiCodeHome = process.env.KIMI_CODE_HOME;
+    const originalKimiShareDir = process.env.KIMI_SHARE_DIR;
+    const agentDir = mkdtempSync(join(tmpdir(), "pi-kimi-usage-timeout-"));
+    writeFileSync(
+      join(agentDir, "auth.json"),
+      JSON.stringify({
+        "kimi-coding": {
+          type: "oauth",
+          access: "stale-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 60_000,
+        },
+      }),
+      "utf8",
+    );
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    process.env.KIMI_CODE_HOME = join(agentDir, "no-kimi-code");
+    process.env.KIMI_SHARE_DIR = join(agentDir, "no-kimi-share");
     let refreshAborted = false;
-    process.env.KIMI_API_KEY = "stale-token";
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       if (url.endsWith("/usages")) return new Response("unauthorized", { status: 401 });
@@ -66,8 +86,13 @@ describe("fetchKimiUsageSnapshot", () => {
       assert.equal(snapshot.membershipLevel, null);
     } finally {
       globalThis.fetch = originalFetch;
-      if (originalApiKey === undefined) delete process.env.KIMI_API_KEY;
-      else process.env.KIMI_API_KEY = originalApiKey;
+      rmSync(agentDir, { recursive: true, force: true });
+      if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+      if (originalKimiCodeHome === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = originalKimiCodeHome;
+      if (originalKimiShareDir === undefined) delete process.env.KIMI_SHARE_DIR;
+      else process.env.KIMI_SHARE_DIR = originalKimiShareDir;
     }
   });
 });
