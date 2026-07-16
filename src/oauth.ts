@@ -2,17 +2,33 @@
 // reuse, the login / refresh handlers wired into pi's OAuth interface, and
 // the stream-level auth refresh used by the streaming handler.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import { dirname, join } from "node:path";
 
-import type {
-  Credential,
-  OAuthCredential,
-  OAuthCredentials,
-  OAuthLoginCallbacks,
-} from "@earendil-works/pi-ai";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import * as piAgent from "@earendil-works/pi-coding-agent";
+
+// Structural mirrors of pi's stored credential shapes. The exported names
+// moved between pi versions (pi-coding-agent <=0.79 vs pi-ai >=0.80.8), so
+// these are defined locally to type-check against either surface.
+type StoredCredential = { type: string } & Record<string, unknown>;
+
+export interface StoredOAuthCredential {
+  type: "oauth";
+  access: string;
+  refresh: string;
+  expires: number;
+  [key: string]: unknown;
+}
 
 // pi renamed its auth storage surface in 0.80.8: the exported AuthStorage
 // class (sync get/set under a file lock) was replaced by readStoredCredential
@@ -20,39 +36,81 @@ import * as piAgent from "@earendil-works/pi-coding-agent";
 // pi provides so the extension keeps loading on both sides of the rename.
 const piAgentRuntime = piAgent as unknown as {
   getAgentDir(): string;
-  readStoredCredential?(providerId: string): Credential | undefined;
+  readStoredCredential?(providerId: string): StoredCredential | undefined;
   AuthStorage?: {
     create(): {
-      get(provider: string): Credential | undefined;
-      set(provider: string, credential: Credential): void;
+      get(provider: string): StoredCredential | undefined;
+      set(provider: string, credential: StoredCredential): void;
     };
   };
 };
 
-export function readStoredOAuthCredential(providerId: string): OAuthCredential | null {
+export function readStoredOAuthCredential(providerId: string): StoredOAuthCredential | null {
   const credential = piAgentRuntime.readStoredCredential
     ? piAgentRuntime.readStoredCredential(providerId)
     : piAgentRuntime.AuthStorage?.create().get(providerId);
-  return credential?.type === "oauth" ? credential : null;
+  return credential?.type === "oauth" ? (credential as StoredOAuthCredential) : null;
 }
 
-function writeStoredCredential(providerId: string, credential: OAuthCredential): void {
+// Mutual exclusion with pi's own credential writes: pi's
+// FileAuthStorageBackend locks auth.json via proper-lockfile, which creates
+// an `<auth.json>.lock` directory with an atomic mkdir. Acquiring the same
+// directory here serializes us against pi and other extension instances.
+function withAuthFileLock<T>(authPath: string, fn: () => T): T {
+  const lockDir = `${authPath}.lock`;
+  const maxAttempts = 100;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      mkdirSync(lockDir);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" || attempt >= maxAttempts) throw error;
+      // Break locks abandoned by a crashed holder; proper-lockfile uses the
+      // same 30s stale threshold.
+      try {
+        if (Date.now() - statSync(lockDir).mtimeMs > 30_000) {
+          rmSync(lockDir, { recursive: true });
+        }
+      } catch {
+        // Lock directory raced away; just retry.
+      }
+      const start = Date.now();
+      while (Date.now() - start < 20) {
+        // Synchronous sleep, the same trade-off pi's own lock retry makes.
+      }
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    rmSync(lockDir, { recursive: true });
+  }
+}
+
+function writeStoredCredential(providerId: string, credential: StoredOAuthCredential): void {
   const AuthStorage = piAgentRuntime.AuthStorage;
   if (AuthStorage) {
     AuthStorage.create().set(providerId, credential);
     return;
   }
-  // pi >=0.80.8: no exported write path, so do a direct read-modify-write of
-  // auth.json in pi's on-disk format (indent 2, mode 0600).
+  // pi >=0.80.8: no exported write path, so do a locked read-modify-write of
+  // auth.json in pi's on-disk format (indent 2). The read happens inside the
+  // lock so concurrent updates from other processes are never clobbered, and
+  // the explicit chmod covers pre-existing files (writeFileSync's mode only
+  // applies on creation).
   const authPath = join(piAgentRuntime.getAgentDir(), "auth.json");
-  let data: Record<string, unknown> = {};
-  try {
-    data = JSON.parse(readFileSync(authPath, "utf-8"));
-  } catch {
-    // Missing or unreadable auth.json — start from an empty store.
-  }
-  data[providerId] = credential;
-  writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
+  withAuthFileLock(authPath, () => {
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(readFileSync(authPath, "utf-8"));
+    } catch {
+      // Missing or unreadable auth.json — start from an empty store.
+    }
+    data[providerId] = credential;
+    writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
+    chmodSync(authPath, 0o600);
+  });
 }
 
 import { CLIENT_ID, PROVIDER_ID, RETRYABLE_REFRESH_STATUSES, getOAuthHost } from "./constants.ts";
@@ -514,7 +572,7 @@ export async function refreshKimiAuthToken(
         if (!kimiCred?.refresh_token || kimiCred.refresh_token === piOAuth.refresh) throw error;
         const kimiExpiresMs = (kimiCred.expires_at ?? 0) * 1000;
         if (kimiCred.access_token !== currentKey && Date.now() < kimiExpiresMs) {
-          const recovered: OAuthCredential = {
+          const recovered: StoredOAuthCredential = {
             ...piOAuth,
             type: "oauth",
             access: kimiCred.access_token!,
@@ -530,7 +588,7 @@ export async function refreshKimiAuthToken(
       }
 
       const newExpiresMs = Date.now() + refreshed.expires_in * 1000;
-      const newCred: OAuthCredential = {
+      const newCred: StoredOAuthCredential = {
         ...piOAuth,
         type: "oauth",
         access: refreshed.access_token,

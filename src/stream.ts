@@ -10,7 +10,6 @@ import type {
   AssistantMessageEventStream,
   Context,
   Model,
-  ProviderHeaders,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import * as piAi from "@earendil-works/pi-ai";
@@ -38,14 +37,21 @@ const piAiRuntime = piAi as unknown as {
   lazyApi?: (load: () => Promise<object>) => { streamSimple: KimiStreamSimple };
 };
 
+// The ./api/* subpath exports only exist on pi-ai >=0.80.8, so a literal
+// specifier would fail type resolution against older pi-ai. Computed
+// specifiers keep the imports invisible to TypeScript; they are only ever
+// evaluated in plain-Node environments where the subpaths do resolve.
+const anthropicMessagesModule = "@earendil-works/pi-ai/api/anthropic-messages";
+const openAICompletionsModule = "@earendil-works/pi-ai/api/openai-completions";
+
 const streamSimpleAnthropic: KimiStreamSimple =
   piAiRuntime.anthropicMessagesApi?.().streamSimple ??
   piAiRuntime.streamSimpleAnthropic ??
-  piAiRuntime.lazyApi?.(() => import("@earendil-works/pi-ai/api/anthropic-messages")).streamSimple!;
+  piAiRuntime.lazyApi?.(() => import(anthropicMessagesModule)).streamSimple!;
 const streamSimpleOpenAICompletions: KimiStreamSimple =
   piAiRuntime.openAICompletionsApi?.().streamSimple ??
   piAiRuntime.streamSimpleOpenAICompletions ??
-  piAiRuntime.lazyApi?.(() => import("@earendil-works/pi-ai/api/openai-completions")).streamSimple!;
+  piAiRuntime.lazyApi?.(() => import(openAICompletionsModule)).streamSimple!;
 import {
   DEFAULT_KIMI_CODE_CONFIG,
   type KimiCodeConfig,
@@ -191,17 +197,17 @@ export function resolveKimiApiKey(apiKey: string | undefined): string {
   return apiKey || process.env.KIMI_API_KEY || "";
 }
 
-export function mergeKimiRequestHeaders(headers?: ProviderHeaders): Record<string, string> {
-  // ProviderHeaders values may be null, meaning "remove this header".
-  const merged: Record<string, string> = { ...getKimiProviderHeaders() };
-  for (const [key, value] of Object.entries(headers ?? {})) {
-    if (value === null) {
-      delete merged[key];
-    } else {
-      merged[key] = value;
-    }
-  }
-  return merged;
+// SimpleStreamOptions.headers is Record<string, string> on pi <=0.79 and
+// ProviderHeaders (Record<string, string | null>, null = suppress the header
+// when pi-ai assembles the request) on >=0.80.8. Accept and preserve both
+// shapes; defined locally because ProviderHeaders is not exported on old pi.
+type HeaderMap = Record<string, string | null>;
+
+export function mergeKimiRequestHeaders(headers?: HeaderMap): HeaderMap {
+  // Caller values override our Kimi defaults. Nulls are retained rather than
+  // deleted so the suppression semantics reach pi-ai, which strips null
+  // entries (including its own defaults) when building the request.
+  return { ...getKimiProviderHeaders(), ...headers };
 }
 
 export function streamSimpleKimi(
@@ -269,7 +275,9 @@ export function streamSimpleKimi(
     return {
       ...options,
       ...apiKeyOverride,
-      headers: mergeKimiRequestHeaders(options?.headers),
+      // Cast to whatever headers shape the installed pi-ai declares:
+      // Record<string, string> on pi <=0.79, ProviderHeaders on >=0.80.8.
+      headers: mergeKimiRequestHeaders(options?.headers) as SimpleStreamOptions["headers"],
       onPayload: async (payload, modelData) => {
         let nextPayload: unknown = payload;
 
