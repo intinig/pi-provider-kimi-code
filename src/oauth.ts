@@ -56,39 +56,63 @@ export function readStoredOAuthCredential(providerId: string): StoredOAuthCreden
 // FileAuthStorageBackend locks auth.json via proper-lockfile, which creates
 // an `<auth.json>.lock` directory with an atomic mkdir. Acquiring the same
 // directory here serializes us against pi and other extension instances.
-function withAuthFileLock<T>(authPath: string, fn: () => T): T {
-  const lockDir = `${authPath}.lock`;
-  const maxAttempts = 100;
-  for (let attempt = 1; ; attempt++) {
+//
+// The wait is async with a 45s deadline because pi runs its OAuth token
+// refresh (a network call) inside this lock, so a live holder can keep it
+// for many seconds; pi's 30s stale threshold bounds how long a lock can
+// look abandoned, and the deadline waits comfortably past it.
+async function acquireAuthFileLock(lockDir: string): Promise<() => void> {
+  const markerPath = join(lockDir, "owner");
+  const owner = `${process.pid}:${Date.now()}`;
+  const deadline = Date.now() + 45_000;
+  for (;;) {
     try {
       mkdirSync(lockDir);
-      break;
+      // Ownership marker. Writing it immediately refreshes the directory
+      // mtime and lets the release check distinguish our lock from one
+      // re-acquired by another process after a stale break.
+      writeFileSync(markerPath, owner);
+      return () => {
+        try {
+          // Only remove the directory while it is still ours; after a stale
+          // break it may belong to a newer holder.
+          if (readFileSync(markerPath, "utf-8") === owner) {
+            rmSync(lockDir, { recursive: true, force: true });
+          }
+        } catch {
+          // Lock directory already gone.
+        }
+      };
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST" || attempt >= maxAttempts) throw error;
-      // Break locks abandoned by a crashed holder; proper-lockfile uses the
-      // same 30s stale threshold.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for ${lockDir}`);
+      }
       try {
-        if (Date.now() - statSync(lockDir).mtimeMs > 30_000) {
-          rmSync(lockDir, { recursive: true });
+        const first = statSync(lockDir);
+        if (Date.now() - first.mtimeMs > 30_000) {
+          // proper-lockfile refreshes the lock mtime at half the stale
+          // interval while its holder is alive, so an unchanged mtime
+          // across a second read means the lock is abandoned and safe to
+          // break; a racing acquirer would have refreshed it instead.
+          await sleep(100);
+          const second = statSync(lockDir);
+          if (second.mtimeMs === first.mtimeMs && Date.now() - second.mtimeMs > 30_000) {
+            rmSync(lockDir, { recursive: true, force: true });
+          }
         }
       } catch {
-        // Lock directory raced away; just retry.
+        // Lock directory raced away; retry acquisition.
       }
-      const start = Date.now();
-      while (Date.now() - start < 20) {
-        // Synchronous sleep, the same trade-off pi's own lock retry makes.
-      }
+      await sleep(100);
     }
-  }
-  try {
-    return fn();
-  } finally {
-    rmSync(lockDir, { recursive: true });
   }
 }
 
-function writeStoredCredential(providerId: string, credential: StoredOAuthCredential): void {
+async function writeStoredCredential(
+  providerId: string,
+  credential: StoredOAuthCredential,
+): Promise<void> {
   const AuthStorage = piAgentRuntime.AuthStorage;
   if (AuthStorage) {
     AuthStorage.create().set(providerId, credential);
@@ -100,7 +124,8 @@ function writeStoredCredential(providerId: string, credential: StoredOAuthCreden
   // the explicit chmod covers pre-existing files (writeFileSync's mode only
   // applies on creation).
   const authPath = join(piAgentRuntime.getAgentDir(), "auth.json");
-  withAuthFileLock(authPath, () => {
+  const release = await acquireAuthFileLock(`${authPath}.lock`);
+  try {
     let data: Record<string, unknown> = {};
     try {
       data = JSON.parse(readFileSync(authPath, "utf-8"));
@@ -110,7 +135,9 @@ function writeStoredCredential(providerId: string, credential: StoredOAuthCreden
     data[providerId] = credential;
     writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
     chmodSync(authPath, 0o600);
-  });
+  } finally {
+    release();
+  }
 }
 
 import { CLIENT_ID, PROVIDER_ID, RETRYABLE_REFRESH_STATUSES, getOAuthHost } from "./constants.ts";
@@ -579,7 +606,7 @@ export async function refreshKimiAuthToken(
             refresh: kimiCred.refresh_token,
             expires: kimiExpiresMs,
           };
-          writeStoredCredential(PROVIDER_ID, recovered);
+          await writeStoredCredential(PROVIDER_ID, recovered);
           console.error("[kimi-coding] auth refresh: recovered newer kimi-code token");
           return recovered.access;
         }
@@ -595,7 +622,7 @@ export async function refreshKimiAuthToken(
         refresh: refreshed.refresh_token,
         expires: newExpiresMs,
       };
-      writeStoredCredential(PROVIDER_ID, newCred);
+      await writeStoredCredential(PROVIDER_ID, newCred);
       writeKimiCodeCredentials(refreshed.access_token, refreshed.refresh_token, newExpiresMs);
       console.error("[kimi-coding] auth refresh: new token persisted");
       return newCred.access;
