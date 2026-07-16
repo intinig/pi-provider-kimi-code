@@ -62,27 +62,20 @@ export function readStoredOAuthCredential(providerId: string): StoredOAuthCreden
 // for many seconds; pi's 30s stale threshold bounds how long a lock can
 // look abandoned, and the deadline waits comfortably past it.
 async function acquireAuthFileLock(lockDir: string): Promise<() => void> {
-  const markerPath = join(lockDir, "owner");
+  // Ownership metadata lives in a sidecar NEXT TO the lock directory. The
+  // directory itself must stay empty: proper-lockfile's stale recovery
+  // removes it with rmdir, which fails on non-empty directories, so a marker
+  // left inside by a crashed holder would block pi's auth writes for good.
+  const sidecarPath = `${lockDir}.owner`;
   const owner = `${process.pid}:${Date.now()}`;
   const deadline = Date.now() + 45_000;
   for (;;) {
     try {
       mkdirSync(lockDir);
-      // Ownership marker. Writing it immediately refreshes the directory
-      // mtime and lets the release check distinguish our lock from one
-      // re-acquired by another process after a stale break.
-      writeFileSync(markerPath, owner);
-      return () => {
-        try {
-          // Only remove the directory while it is still ours; after a stale
-          // break it may belong to a newer holder.
-          if (readFileSync(markerPath, "utf-8") === owner) {
-            rmSync(lockDir, { recursive: true, force: true });
-          }
-        } catch {
-          // Lock directory already gone.
-        }
-      };
+      // Writing the sidecar right away refreshes the directory mtime and
+      // lets the release check distinguish our lock from one re-acquired by
+      // another process after a stale break.
+      writeFileSync(sidecarPath, owner);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (Date.now() >= deadline) {
@@ -99,13 +92,27 @@ async function acquireAuthFileLock(lockDir: string): Promise<() => void> {
           const second = statSync(lockDir);
           if (second.mtimeMs === first.mtimeMs && Date.now() - second.mtimeMs > 30_000) {
             rmSync(lockDir, { recursive: true, force: true });
+            rmSync(sidecarPath, { force: true });
           }
         }
       } catch {
         // Lock directory raced away; retry acquisition.
       }
       await sleep(100);
+      continue;
     }
+    return () => {
+      try {
+        // Only remove the lock while it is still ours; after a stale break
+        // it may belong to a newer holder.
+        if (readFileSync(sidecarPath, "utf-8") === owner) {
+          rmSync(lockDir, { recursive: true, force: true });
+          rmSync(sidecarPath, { force: true });
+        }
+      } catch {
+        // Lock directory or sidecar already gone.
+      }
+    };
   }
 }
 
