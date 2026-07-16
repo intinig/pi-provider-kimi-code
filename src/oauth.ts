@@ -2,17 +2,11 @@
 // reuse, the login / refresh handlers wired into pi's OAuth interface, and
 // the stream-level auth refresh used by the streaming handler.
 
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { dirname, join } from "node:path";
+
+import { lock as acquireFileLock } from "proper-lockfile";
 
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import * as piAgent from "@earendil-works/pi-coding-agent";
@@ -52,68 +46,18 @@ export function readStoredOAuthCredential(providerId: string): StoredOAuthCreden
   return credential?.type === "oauth" ? (credential as StoredOAuthCredential) : null;
 }
 
-// Mutual exclusion with pi's own credential writes: pi's
-// FileAuthStorageBackend locks auth.json via proper-lockfile, which creates
-// an `<auth.json>.lock` directory with an atomic mkdir. Acquiring the same
-// directory here serializes us against pi and other extension instances.
-//
-// The wait is async with a 45s deadline because pi runs its OAuth token
-// refresh (a network call) inside this lock, so a live holder can keep it
-// for many seconds; pi's 30s stale threshold bounds how long a lock can
-// look abandoned, and the deadline waits comfortably past it.
-async function acquireAuthFileLock(lockDir: string): Promise<() => void> {
-  // Ownership metadata lives in a sidecar NEXT TO the lock directory. The
-  // directory itself must stay empty: proper-lockfile's stale recovery
-  // removes it with rmdir, which fails on non-empty directories, so a marker
-  // left inside by a crashed holder would block pi's auth writes for good.
-  const sidecarPath = `${lockDir}.owner`;
-  const owner = `${process.pid}:${Date.now()}`;
-  const deadline = Date.now() + 45_000;
-  for (;;) {
-    try {
-      mkdirSync(lockDir);
-      // Writing the sidecar right away refreshes the directory mtime and
-      // lets the release check distinguish our lock from one re-acquired by
-      // another process after a stale break.
-      writeFileSync(sidecarPath, owner);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for ${lockDir}`);
-      }
-      try {
-        const first = statSync(lockDir);
-        if (Date.now() - first.mtimeMs > 30_000) {
-          // proper-lockfile refreshes the lock mtime at half the stale
-          // interval while its holder is alive, so an unchanged mtime
-          // across a second read means the lock is abandoned and safe to
-          // break; a racing acquirer would have refreshed it instead.
-          await sleep(100);
-          const second = statSync(lockDir);
-          if (second.mtimeMs === first.mtimeMs && Date.now() - second.mtimeMs > 30_000) {
-            rmSync(lockDir, { recursive: true, force: true });
-            rmSync(sidecarPath, { force: true });
-          }
-        }
-      } catch {
-        // Lock directory raced away; retry acquisition.
-      }
-      await sleep(100);
-      continue;
-    }
-    return () => {
-      try {
-        // Only remove the lock while it is still ours; after a stale break
-        // it may belong to a newer holder.
-        if (readFileSync(sidecarPath, "utf-8") === owner) {
-          rmSync(lockDir, { recursive: true, force: true });
-          rmSync(sidecarPath, { force: true });
-        }
-      } catch {
-        // Lock directory or sidecar already gone.
-      }
-    };
-  }
+// Mutual exclusion with pi's own credential writes: use the same library
+// (proper-lockfile) on the same file pi's FileAuthStorageBackend locks, with
+// the same options. The shared implementation keeps the lock mtime fresh
+// while held, recovers stale locks from crashed processes, and retries for
+// ~40s so a live holder running a slow network refresh inside the lock is
+// waited out.
+async function acquireAuthFileLock(authPath: string): Promise<() => Promise<void>> {
+  return acquireFileLock(authPath, {
+    realpath: false,
+    stale: 30_000,
+    retries: { retries: 10, factor: 2, minTimeout: 100, maxTimeout: 10_000, randomize: true },
+  });
 }
 
 async function writeStoredCredential(
@@ -131,7 +75,7 @@ async function writeStoredCredential(
   // the explicit chmod covers pre-existing files (writeFileSync's mode only
   // applies on creation).
   const authPath = join(piAgentRuntime.getAgentDir(), "auth.json");
-  const release = await acquireAuthFileLock(`${authPath}.lock`);
+  const release = await acquireAuthFileLock(authPath);
   try {
     let data: Record<string, unknown> = {};
     try {
@@ -143,7 +87,7 @@ async function writeStoredCredential(
     writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
     chmodSync(authPath, 0o600);
   } finally {
-    release();
+    await release();
   }
 }
 
