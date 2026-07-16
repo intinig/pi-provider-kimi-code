@@ -521,6 +521,7 @@ describe("extension tool registration", () => {
       }
       if (url.endsWith("/usages")) {
         usageRequests++;
+        if (usageRequests === 3) return new Response("unavailable", { status: 503 });
         const level = usageRequests === 1 ? "LEVEL_STANDARD" : "LEVEL_INTERMEDIATE";
         return new Response(JSON.stringify({ user: { membership: { level } } }), {
           status: 200,
@@ -553,13 +554,29 @@ describe("extension tool registration", () => {
         (_list, done) => done(),
       );
 
+      const allegrettoModels = [
+        ["kimi-for-coding", 262144],
+        ["kimi-for-coding-highspeed", 262144],
+        ["k3", 1048576],
+      ];
       assert.deepEqual(
         providerConfigs.get("kimi-coding")?.models?.map((model) => [model.id, model.contextWindow]),
-        [
-          ["kimi-for-coding", 262144],
-          ["kimi-for-coding-highspeed", 262144],
-          ["k3", 1048576],
-        ],
+        allegrettoModels,
+      );
+
+      await runSettingsHandler(
+        kimiCommand.handler,
+        {
+          cwd,
+          mode: "tui",
+          ui: { notify: () => {} },
+          reload: async () => {},
+        } as unknown as ExtensionCommandContext,
+        (_list, done) => done(),
+      );
+      assert.deepEqual(
+        providerConfigs.get("kimi-coding")?.models?.map((model) => [model.id, model.contextWindow]),
+        allegrettoModels,
       );
     } finally {
       globalThis.fetch = originalFetch;
