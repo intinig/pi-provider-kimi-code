@@ -6,9 +6,54 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { dirname, join } from "node:path";
 
-import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
-import type { OAuthCredential } from "@earendil-works/pi-coding-agent";
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import type {
+  Credential,
+  OAuthCredential,
+  OAuthCredentials,
+  OAuthLoginCallbacks,
+} from "@earendil-works/pi-ai";
+import * as piAgent from "@earendil-works/pi-coding-agent";
+
+// pi renamed its auth storage surface in 0.80.8: the exported AuthStorage
+// class (sync get/set under a file lock) was replaced by readStoredCredential
+// for one-off reads, with no exported write path. Detect whichever the host
+// pi provides so the extension keeps loading on both sides of the rename.
+const piAgentRuntime = piAgent as unknown as {
+  getAgentDir(): string;
+  readStoredCredential?(providerId: string): Credential | undefined;
+  AuthStorage?: {
+    create(): {
+      get(provider: string): Credential | undefined;
+      set(provider: string, credential: Credential): void;
+    };
+  };
+};
+
+export function readStoredOAuthCredential(providerId: string): OAuthCredential | null {
+  const credential = piAgentRuntime.readStoredCredential
+    ? piAgentRuntime.readStoredCredential(providerId)
+    : piAgentRuntime.AuthStorage?.create().get(providerId);
+  return credential?.type === "oauth" ? credential : null;
+}
+
+function writeStoredCredential(providerId: string, credential: OAuthCredential): void {
+  const AuthStorage = piAgentRuntime.AuthStorage;
+  if (AuthStorage) {
+    AuthStorage.create().set(providerId, credential);
+    return;
+  }
+  // pi >=0.80.8: no exported write path, so do a direct read-modify-write of
+  // auth.json in pi's on-disk format (indent 2, mode 0600).
+  const authPath = join(piAgentRuntime.getAgentDir(), "auth.json");
+  let data: Record<string, unknown> = {};
+  try {
+    data = JSON.parse(readFileSync(authPath, "utf-8"));
+  } catch {
+    // Missing or unreadable auth.json — start from an empty store.
+  }
+  data[providerId] = credential;
+  writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
+}
 
 import { CLIENT_ID, PROVIDER_ID, RETRYABLE_REFRESH_STATUSES, getOAuthHost } from "./constants.ts";
 import { getCommonHeaders } from "./device.ts";
@@ -424,8 +469,8 @@ export async function refreshKimiCodeToken(
 // `expires` is in the past. If the server rotates/revokes the access token
 // before that (common with short-lived session tokens), every request keeps
 // returning 401. The streaming handler invokes refreshKimiAuthToken on the
-// first auth error to force a refresh through AuthStorage (which persists the
-// new credentials under a file lock), and retry once.
+// first auth error to force a refresh and persist the new credentials, and
+// retry once.
 // =============================================================================
 
 export function getKimiApiKey(credentials: OAuthCredentials): string {
@@ -453,9 +498,7 @@ export async function refreshKimiAuthToken(
 ): Promise<string | null> {
   try {
     const kimiCred = readKimiCliCredentials();
-    const storage = AuthStorage.create();
-    const piCred = storage.get(PROVIDER_ID);
-    const piOAuth = piCred?.type === "oauth" ? piCred : null;
+    const piOAuth = readStoredOAuthCredential(PROVIDER_ID);
 
     if (piOAuth) {
       if (piOAuth.access !== currentKey && Date.now() < piOAuth.expires) {
@@ -478,7 +521,7 @@ export async function refreshKimiAuthToken(
             refresh: kimiCred.refresh_token,
             expires: kimiExpiresMs,
           };
-          storage.set(PROVIDER_ID, recovered);
+          writeStoredCredential(PROVIDER_ID, recovered);
           console.error("[kimi-coding] auth refresh: recovered newer kimi-code token");
           return recovered.access;
         }
@@ -494,7 +537,7 @@ export async function refreshKimiAuthToken(
         refresh: refreshed.refresh_token,
         expires: newExpiresMs,
       };
-      storage.set(PROVIDER_ID, newCred);
+      writeStoredCredential(PROVIDER_ID, newCred);
       writeKimiCodeCredentials(refreshed.access_token, refreshed.refresh_token, newExpiresMs);
       console.error("[kimi-coding] auth refresh: new token persisted");
       return newCred.access;

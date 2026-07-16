@@ -10,13 +10,42 @@ import type {
   AssistantMessageEventStream,
   Context,
   Model,
+  ProviderHeaders,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import {
-  createAssistantMessageEventStream,
-  streamSimpleAnthropic,
-  streamSimpleOpenAICompletions,
-} from "@earendil-works/pi-ai";
+import * as piAi from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+
+type KimiStreamSimple = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) => AssistantMessageEventStream;
+
+// pi 0.80.8 unexported the global streamSimple* functions. Depending on how
+// this module is loaded, the pi-ai root now offers one of three shapes:
+//   - pi extension loader (jiti/Bun): root aliases to the compat entrypoint,
+//     which exposes lazy per-API factories (anthropicMessagesApi et al.)
+//   - pi <=0.79: root only has the legacy streamSimple* globals
+//   - plain Node with pi-ai >=0.80.8 (tests, SDK use): root has neither, but
+//     lazyApi + a dynamic subpath import reaches the same implementation
+// Detect whichever shape is present so the extension loads in all three.
+const piAiRuntime = piAi as unknown as {
+  anthropicMessagesApi?: () => { streamSimple: KimiStreamSimple };
+  openAICompletionsApi?: () => { streamSimple: KimiStreamSimple };
+  streamSimpleAnthropic?: KimiStreamSimple;
+  streamSimpleOpenAICompletions?: KimiStreamSimple;
+  lazyApi?: (load: () => Promise<object>) => { streamSimple: KimiStreamSimple };
+};
+
+const streamSimpleAnthropic: KimiStreamSimple =
+  piAiRuntime.anthropicMessagesApi?.().streamSimple ??
+  piAiRuntime.streamSimpleAnthropic ??
+  piAiRuntime.lazyApi?.(() => import("@earendil-works/pi-ai/api/anthropic-messages")).streamSimple!;
+const streamSimpleOpenAICompletions: KimiStreamSimple =
+  piAiRuntime.openAICompletionsApi?.().streamSimple ??
+  piAiRuntime.streamSimpleOpenAICompletions ??
+  piAiRuntime.lazyApi?.(() => import("@earendil-works/pi-ai/api/openai-completions")).streamSimple!;
 import {
   DEFAULT_KIMI_CODE_CONFIG,
   type KimiCodeConfig,
@@ -162,8 +191,17 @@ export function resolveKimiApiKey(apiKey: string | undefined): string {
   return apiKey || process.env.KIMI_API_KEY || "";
 }
 
-export function mergeKimiRequestHeaders(headers?: Record<string, string>): Record<string, string> {
-  return { ...getKimiProviderHeaders(), ...headers };
+export function mergeKimiRequestHeaders(headers?: ProviderHeaders): Record<string, string> {
+  // ProviderHeaders values may be null, meaning "remove this header".
+  const merged: Record<string, string> = { ...getKimiProviderHeaders() };
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (value === null) {
+      delete merged[key];
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
 }
 
 export function streamSimpleKimi(

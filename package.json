@@ -50,9 +50,9 @@
     "pre-commit": "prek run"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.79.10",
-    "@earendil-works/pi-coding-agent": "^0.79.10",
-    "@earendil-works/pi-tui": "^0.79.10",
+    "@earendil-works/pi-ai": "^0.80.9",
+    "@earendil-works/pi-coding-agent": "^0.80.9",
+    "@earendil-works/pi-tui": "^0.80.9",
     "@j178/prek": "^0.4.4",
     "@types/node": "^24.0.0",
     "oxfmt": "^0.44.0",
