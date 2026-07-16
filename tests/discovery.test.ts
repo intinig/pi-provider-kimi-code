@@ -112,6 +112,20 @@ describe("discoverKimiModelMetadata", () => {
               default_effort: "high",
             },
           },
+          {
+            id: "k3",
+            display_name: "k3",
+            context_length: 1048576,
+            supports_reasoning: true,
+            supports_image_in: true,
+            supports_video_in: true,
+            supports_thinking_type: "only",
+            think_efforts: {
+              support: true,
+              valid_efforts: ["max"],
+              default_effort: "max",
+            },
+          },
         ],
       }),
     );
@@ -131,6 +145,16 @@ describe("discoverKimiModelMetadata", () => {
       protocol: "anthropic",
       supportEfforts: ["low", "high"],
       defaultEffort: "high",
+    });
+    assert.deepEqual(result.modelCatalog?.k3, {
+      wireModelId: "k3",
+      modelDisplay: "k3",
+      contextLength: 1048576,
+      supportsThinkingType: "only",
+      supportsImageIn: true,
+      supportsVideoIn: true,
+      supportEfforts: ["max"],
+      defaultEffort: "max",
     });
   });
 
@@ -227,6 +251,7 @@ describe("discoverKimiModelMetadata", () => {
       modelCatalog: {
         "kimi-for-coding": { wireModelId: "kimi-for-coding" },
       },
+      modelCatalogVersion: 1,
     });
   });
 

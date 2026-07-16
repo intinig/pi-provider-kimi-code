@@ -22,6 +22,7 @@ export interface KimiModelMetadata {
 
 export interface KimiOAuthExtras extends KimiModelMetadata {
   modelCatalog?: Record<string, KimiModelMetadata>;
+  modelCatalogVersion?: number;
 }
 
 export type KimiOAuthCredentials = OAuthCredentials & KimiOAuthExtras;
@@ -56,6 +57,8 @@ const COST_HIGH_SPEED = { input: 1.793, output: 7.448, cacheRead: 0.359, cacheWr
 
 export const KIMI_CODING_MODEL_ID = "kimi-for-coding";
 export const KIMI_CODING_HIGHSPEED_MODEL_ID = "kimi-for-coding-highspeed";
+export const KIMI_K3_MODEL_ID = "k3";
+export const KIMI_MODEL_CATALOG_VERSION = 1;
 
 function resolveModelCost(modelDisplay: string | undefined): {
   input: number;
@@ -72,9 +75,15 @@ export function buildKimiModelFromConfig(
   modelId = KIMI_CODING_MODEL_ID,
 ): Model<Api> {
   const isHighSpeed = modelId === KIMI_CODING_HIGHSPEED_MODEL_ID;
+  const name =
+    modelId === KIMI_K3_MODEL_ID
+      ? "K3"
+      : isHighSpeed
+        ? "Kimi for Coding High Speed"
+        : "Kimi for Coding";
   return {
     id: modelId,
-    name: isHighSpeed ? "Kimi for Coding High Speed" : "Kimi for Coding",
+    name,
     reasoning: config.reasoning,
     input: [...config.input] as unknown as ("text" | "image" | "video")[],
     cost: { ...(isHighSpeed ? COST_HIGH_SPEED : COST_STANDARD) },
@@ -201,7 +210,11 @@ export async function discoverKimiModelMetadata(
     if (!response.ok) return {};
     const json = (await response.json()) as { data?: unknown };
     const list = Array.isArray(json.data) ? (json.data as KimiServerModel[]) : [];
-    const supportedIds = new Set([KIMI_CODING_MODEL_ID, KIMI_CODING_HIGHSPEED_MODEL_ID]);
+    const supportedIds = new Set([
+      KIMI_CODING_MODEL_ID,
+      KIMI_CODING_HIGHSPEED_MODEL_ID,
+      KIMI_K3_MODEL_ID,
+    ]);
     const modelCatalog: Record<string, KimiModelMetadata> = {};
     for (const model of list) {
       if (typeof model.id !== "string" || !supportedIds.has(model.id)) continue;
@@ -210,9 +223,11 @@ export async function discoverKimiModelMetadata(
     }
     const preferred = modelCatalog[KIMI_CODING_MODEL_ID];
     if (!preferred) {
-      return Object.keys(modelCatalog).length > 0 ? { modelCatalog } : {};
+      return Object.keys(modelCatalog).length > 0
+        ? { modelCatalog, modelCatalogVersion: KIMI_MODEL_CATALOG_VERSION }
+        : {};
     }
-    return { ...preferred, modelCatalog };
+    return { ...preferred, modelCatalog, modelCatalogVersion: KIMI_MODEL_CATALOG_VERSION };
   } catch {
     return {};
   } finally {

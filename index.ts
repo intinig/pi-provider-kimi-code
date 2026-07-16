@@ -46,6 +46,8 @@ import {
   applyKimiOAuthExtrasToModel,
   KIMI_CODING_HIGHSPEED_MODEL_ID,
   KIMI_CODING_MODEL_ID,
+  KIMI_K3_MODEL_ID,
+  KIMI_MODEL_CATALOG_VERSION,
   discoverKimiModelMetadata,
   getKimiModelMetadata,
   resolveKimiModelConfig,
@@ -368,7 +370,10 @@ function filterAvailableKimiModels<T extends { id: string }>(
   models: T[],
   extras: KimiOAuthExtras,
 ): T[] {
-  const available = extras.modelCatalog ? new Set(Object.keys(extras.modelCatalog)) : null;
+  const available =
+    extras.modelCatalogVersion === KIMI_MODEL_CATALOG_VERSION && extras.modelCatalog
+      ? new Set(Object.keys(extras.modelCatalog))
+      : null;
   return available ? models.filter((model) => available.has(model.id)) : models;
 }
 
@@ -381,6 +386,10 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
     buildKimiModelFromConfig(state.config.model, KIMI_CODING_HIGHSPEED_MODEL_ID),
     getKimiModelMetadata(state.modelExtras, KIMI_CODING_HIGHSPEED_MODEL_ID),
   );
+  const k3Model = applyKimiOAuthExtrasToModel(
+    buildKimiModelFromConfig(state.config.model, KIMI_K3_MODEL_ID),
+    getKimiModelMetadata(state.modelExtras, KIMI_K3_MODEL_ID),
+  );
 
   pi.registerProvider(PROVIDER_ID, {
     baseUrl: getBaseUrl(state.config.protocol),
@@ -388,7 +397,7 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
     api: getKimiApiType(state.config.protocol),
     streamSimple: streamSimpleKimi,
 
-    models: filterAvailableKimiModels([standardModel, highSpeedModel], state.modelExtras),
+    models: filterAvailableKimiModels([standardModel, highSpeedModel, k3Model], state.modelExtras),
 
     oauth: {
       name: "Kimi Code (OAuth)",
@@ -404,7 +413,10 @@ function registerKimiProvider(pi: ExtensionAPI, state: KimiRuntimeState): void {
         const extras = cred as KimiOAuthCredentials;
         state.modelExtras = extras;
         reloadEffectiveKimiRuntimeConfig(state, state.cwd, state.projectTrusted);
-        const available = extras.modelCatalog ? new Set(Object.keys(extras.modelCatalog)) : null;
+        const available =
+          extras.modelCatalogVersion === KIMI_MODEL_CATALOG_VERSION && extras.modelCatalog
+            ? new Set(Object.keys(extras.modelCatalog))
+            : null;
         return models
           .filter(
             (model) => model.provider !== PROVIDER_ID || !available || available.has(model.id),

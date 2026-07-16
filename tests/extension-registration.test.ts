@@ -219,7 +219,7 @@ describe("extension tool registration", () => {
     assert.ok(commands.has("kimi-settings"));
   });
 
-  it("registers standard and highspeed Coding models as separate selections", async () => {
+  it("registers all Coding models as separate selections", async () => {
     const cwd = tempDir("kimi-extension-cwd");
     const { pi, providerConfigs } = makePi();
 
@@ -228,10 +228,11 @@ describe("extension tool registration", () => {
     const models = providerConfigs.get("kimi-coding")?.models ?? [];
     assert.deepEqual(
       models.map((model) => model.id),
-      ["kimi-for-coding", "kimi-for-coding-highspeed"],
+      ["kimi-for-coding", "kimi-for-coding-highspeed", "k3"],
     );
     assert.equal(models[0]?.cost.input, 0.897);
     assert.equal(models[1]?.cost.input, 1.793);
+    assert.equal(models[2]?.name, "K3");
   });
 
   it("applies discovered metadata to each registered Coding model", async () => {
@@ -249,6 +250,7 @@ describe("extension tool registration", () => {
         access: "oauth-token",
         refresh: "refresh-token",
         expires: Date.now() + 60_000,
+        modelCatalogVersion: 1,
         modelCatalog: {
           "kimi-for-coding": {
             wireModelId: "kimi-for-coding",
@@ -261,6 +263,16 @@ describe("extension tool registration", () => {
             contextLength: 524288,
             supportsVideoIn: true,
           },
+          k3: {
+            wireModelId: "k3",
+            modelDisplay: "k3",
+            contextLength: 1048576,
+            supportsThinkingType: "only",
+            supportsImageIn: true,
+            supportsVideoIn: true,
+            supportEfforts: ["max"],
+            defaultEffort: "max",
+          },
         },
       } as never,
     );
@@ -269,6 +281,41 @@ describe("extension tool registration", () => {
     assert.equal(models[1]?.name, "Kimi High Speed");
     assert.equal(models[1]?.contextWindow, 524288);
     assert.deepEqual(models[1]?.input, ["text", "image", "video"]);
+    assert.equal(models[2]?.name, "k3");
+    assert.equal(models[2]?.contextWindow, 1048576);
+    assert.deepEqual(models[2]?.input, ["text", "image", "video"]);
+    assert.deepEqual(
+      (models[2] as (typeof models)[number] & { supportEfforts?: string[] }).supportEfforts,
+      ["max"],
+    );
+  });
+
+  it("regression: does not let a legacy cached catalog hide newly added models", async () => {
+    const cwd = tempDir("kimi-extension-cwd");
+    const { pi, providerConfigs } = makePi();
+
+    await withCwd(cwd, () => registerKimiCodeExtension(pi));
+
+    const provider = providerConfigs.get("kimi-coding");
+    const modifyModels = provider?.oauth?.modifyModels;
+    assert.ok(modifyModels);
+    const models = modifyModels(
+      provider.models?.map((model) => ({ ...model, provider: "kimi-coding" })) as never,
+      {
+        access: "expired-oauth-token",
+        refresh: "refresh-token",
+        expires: Date.now() - 60_000,
+        modelCatalog: {
+          "kimi-for-coding": { wireModelId: "kimi-for-coding" },
+          "kimi-for-coding-highspeed": { wireModelId: "kimi-for-coding-highspeed" },
+        },
+      } as never,
+    );
+
+    assert.deepEqual(
+      models.map((model) => model.id),
+      ["kimi-for-coding", "kimi-for-coding-highspeed", "k3"],
+    );
   });
 
   it("regression: removes unavailable Kimi models without removing other providers", async () => {
@@ -290,6 +337,7 @@ describe("extension tool registration", () => {
         access: "oauth-token",
         refresh: "refresh-token",
         expires: Date.now() + 60_000,
+        modelCatalogVersion: 1,
         modelCatalog: {
           "kimi-for-coding": { wireModelId: "kimi-for-coding" },
         },
