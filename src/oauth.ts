@@ -418,6 +418,11 @@ export function getKimiApiKey(credentials: OAuthCredentials): string {
 
 export function isKimiAuthErrorMessage(message: unknown): boolean {
   const text = String(message ?? "").toLowerCase();
+  const isMembershipPermissionError =
+    text.includes("current subscription does not have access to k3") ||
+    text.includes("current plan supports only kimi-k3 up to 256k context") ||
+    text.includes("current subscription does not have access to kimi-for-coding-highspeed");
+  if (isMembershipPermissionError) return false;
   return (
     /\b401\b/.test(text) ||
     text.includes("unauthorized") ||

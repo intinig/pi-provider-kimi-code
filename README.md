@@ -104,11 +104,13 @@ KIMI_API_KEY=sk-... pi
 
 This provider publishes three Pi model IDs:
 
-```text
-kimi-coding/kimi-for-coding
-kimi-coding/kimi-for-coding-highspeed
-kimi-coding/k3
-```
+| Pi model ID                             | Upstream model           | Access                                                 |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------ |
+| `kimi-coding/kimi-for-coding`           | Kimi K2.7 Code           | All Kimi Code members                                  |
+| `kimi-coding/kimi-for-coding-highspeed` | Kimi K2.7 Code HighSpeed | Allegretto and above                                   |
+| `kimi-coding/k3`                        | Kimi K3                  | Moderato: 256K context; Allegretto and above: up to 1M |
+
+Plans below Moderato cannot use K3. The provider reads the current membership level from `/usages` and combines it with `/models`: server catalog availability remains authoritative, while known plan limits can only hide unavailable selections or lower K3's advertised context window. Unknown or unavailable membership data falls back to the server catalog instead of guessing.
 
 Select a model inside Pi:
 
@@ -127,7 +129,9 @@ Fallback values:
 - Input: text and image
 - Reasoning: enabled
 
-The provider maps Pi's reasoning levels to Kimi's top-level `thinking` parameter. It sends `thinking.effort` only when `/models` advertises supported effort values. The mapping refreshes automatically on credential refresh. Opening `/kimi-settings` also re-discovers the latest model metadata.
+The provider maps Pi's reasoning levels to Kimi's top-level `thinking` parameter. K3 currently advertises only `max`; `max` and `xhigh` map to `max`, `high` and `medium` map to `high`, and `low` and `minimal` map to `low`. It sends `thinking.effort` only when `/models` advertises the mapped value. The mapping refreshes automatically on credential refresh. Opening `/kimi-settings` also re-discovers the latest model and membership metadata.
+
+Switching models or thinking effort invalidates Kimi's existing context cache. Start a new session when switching to avoid re-prefilling a long conversation and consuming extra quota.
 
 ## Optional tools
 

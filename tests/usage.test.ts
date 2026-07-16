@@ -6,6 +6,7 @@ import {
   formatResetTime,
   formatUsageRow,
   parseMembership,
+  parseMembershipLevel,
   parseUsageRow,
   parseUsageSummary,
 } from "../src/usage.ts";
@@ -159,6 +160,14 @@ describe("parseUsageSummary", () => {
 });
 
 describe("parseMembership", () => {
+  it("returns the raw plan level used for model entitlement checks", () => {
+    assert.equal(
+      parseMembershipLevel({ user: { membership: { level: "LEVEL_STANDARD" } } }),
+      "LEVEL_STANDARD",
+    );
+    assert.equal(parseMembershipLevel({}), null);
+  });
+
   it("keeps unknown membership levels readable", () => {
     assert.equal(
       parseMembership({ user: { membership: { level: "LEVEL_UNKNOWN" } } }),

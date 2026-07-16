@@ -60,6 +60,44 @@ export const KIMI_CODING_HIGHSPEED_MODEL_ID = "kimi-for-coding-highspeed";
 export const KIMI_K3_MODEL_ID = "k3";
 export const KIMI_MODEL_CATALOG_VERSION = 1;
 
+const KIMI_K3_MODERATO_CONTEXT_WINDOW = 262144;
+const KIMI_MEMBERSHIP_RANK: Readonly<Record<string, number>> = {
+  LEVEL_FREE: 0,
+  LEVEL_BASIC: 1,
+  LEVEL_STANDARD: 2,
+  LEVEL_INTERMEDIATE: 3,
+  LEVEL_ADVANCED: 4,
+  LEVEL_PREMIUM: 5,
+};
+const KIMI_MODERATO_RANK = KIMI_MEMBERSHIP_RANK.LEVEL_STANDARD;
+const KIMI_ALLEGRETTO_RANK = KIMI_MEMBERSHIP_RANK.LEVEL_INTERMEDIATE;
+
+export function isKimiModelAvailableForMembership(
+  modelId: string,
+  membershipLevel: string | null | undefined,
+): boolean | undefined {
+  if (!membershipLevel) return undefined;
+  const rank = KIMI_MEMBERSHIP_RANK[membershipLevel];
+  if (rank === undefined) return undefined;
+  if (modelId === KIMI_K3_MODEL_ID) return rank >= KIMI_MODERATO_RANK;
+  if (modelId === KIMI_CODING_HIGHSPEED_MODEL_ID) return rank >= KIMI_ALLEGRETTO_RANK;
+  return true;
+}
+
+export function applyKimiMembershipLimitsToModel(
+  model: Model<Api>,
+  membershipLevel: string | null | undefined,
+): Model<Api> {
+  const rank = membershipLevel ? KIMI_MEMBERSHIP_RANK[membershipLevel] : undefined;
+  if (model.id !== KIMI_K3_MODEL_ID || rank === undefined || rank >= KIMI_ALLEGRETTO_RANK) {
+    return model;
+  }
+  return {
+    ...model,
+    contextWindow: Math.min(model.contextWindow, KIMI_K3_MODERATO_CONTEXT_WINDOW),
+  };
+}
+
 function resolveModelCost(modelDisplay: string | undefined): {
   input: number;
   output: number;
@@ -77,7 +115,7 @@ export function buildKimiModelFromConfig(
   const isHighSpeed = modelId === KIMI_CODING_HIGHSPEED_MODEL_ID;
   const name =
     modelId === KIMI_K3_MODEL_ID
-      ? "K3"
+      ? "Kimi K3"
       : isHighSpeed
         ? "Kimi for Coding High Speed"
         : "Kimi for Coding";
@@ -253,7 +291,10 @@ export function applyKimiOAuthExtrasToModel(
     defaultEffort?: string;
   } = { ...model };
   if (typeof extras.modelDisplay === "string" && extras.modelDisplay) {
-    next.name = extras.modelDisplay;
+    next.name =
+      model.id === KIMI_K3_MODEL_ID && /^k3$/i.test(extras.modelDisplay)
+        ? "Kimi K3"
+        : extras.modelDisplay;
     next.cost = resolveModelCost(extras.modelDisplay);
   }
   if (typeof extras.contextLength === "number" && extras.contextLength > 0) {
