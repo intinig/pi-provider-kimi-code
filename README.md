@@ -211,10 +211,11 @@ If you already use another search or fetch tool, pick one path for a session. Ov
 
 ## Common knobs
 
-Most users do not need environment variables. Two are worth knowing:
+Most users do not need environment variables. Three are worth knowing:
 
 - `KIMI_API_KEY` — static API key for CI or pay-per-token use.
 - `KIMI_CODE_PROTOCOL` — `openai` by default; set to `anthropic` if your Pi setup needs Anthropic-compatible requests. Can also be set through `/kimi-settings` or JSON config.
+- `KIMI_MEMBERSHIP_LEVEL` — override the plan tier when `/usages` misreports it for your account (e.g. `vivace`), restoring tier-gated models and the full K3 context window.
 
 Tools, protocol, and upload threshold are all configurable through `/kimi-settings` or JSON config files.
 

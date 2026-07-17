@@ -35,6 +35,12 @@ These mirror the same-name environment variables in upstream `kimi-code`. When s
 | `KIMI_MODEL_MAX_CONTEXT_SIZE` | Override the model's advertised context window (in tokens). Useful when a server-side rollout exceeds what `/v1/models` reports. Non-positive / non-numeric values are ignored.                                                                                                       |
 | `KIMI_MODEL_CAPABILITIES`     | Comma-separated capability flags. Recognized tokens: `thinking`, `always_thinking`, `image_in`. `thinking` enables toggleable reasoning, `always_thinking` forces thinking on, and `image_in` enables image input. Tokens not in this list are ignored. Example: `thinking,image_in`. |
 
+## Membership override
+
+| Variable                | Description                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `KIMI_MEMBERSHIP_LEVEL` | Override the membership level reported by `/usages`. Accepts `LEVEL_*` enum values (`LEVEL_PREMIUM`) or plan tempo names (`vivace`, `allegretto`, ...), case-insensitive; unknown values are ignored. Use when the server misreports `membership.level` for your account, which otherwise hides tier-gated models and clamps K3 to 256K context. The `/kimi-settings` usage view marks the overridden value. |
+
 ## Generation overrides
 
 | Variable                           | Description                                                                                                                                                                                                                         |

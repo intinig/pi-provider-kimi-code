@@ -72,6 +72,30 @@ const KIMI_MEMBERSHIP_RANK: Readonly<Record<string, number>> = {
 const KIMI_MODERATO_RANK = KIMI_MEMBERSHIP_RANK.LEVEL_STANDARD;
 const KIMI_ALLEGRETTO_RANK = KIMI_MEMBERSHIP_RANK.LEVEL_INTERMEDIATE;
 
+// Tempo names shown on kimi.com, accepted as friendlier override values.
+const KIMI_MEMBERSHIP_LEVEL_ALIASES: Readonly<Record<string, string>> = {
+  free: "LEVEL_FREE",
+  adagio: "LEVEL_BASIC",
+  moderato: "LEVEL_STANDARD",
+  allegretto: "LEVEL_INTERMEDIATE",
+  allegro: "LEVEL_ADVANCED",
+  vivace: "LEVEL_PREMIUM",
+};
+
+// Escape hatch for accounts where `/usages` misreports `membership.level`
+// while `/v1/models` and request enforcement reflect the real plan. The
+// override replaces the reported level everywhere it is consumed: model
+// availability, the K3 context clamp, and the usage display.
+export function getKimiMembershipLevelOverride(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const raw = env.KIMI_MEMBERSHIP_LEVEL?.trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  if (KIMI_MEMBERSHIP_RANK[upper] !== undefined) return upper;
+  return KIMI_MEMBERSHIP_LEVEL_ALIASES[raw.toLowerCase()] ?? null;
+}
+
 export function isKimiModelAvailableForMembership(
   modelId: string,
   membershipLevel: string | null | undefined,

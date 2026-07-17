@@ -1,5 +1,6 @@
 import { PROVIDER_ID, getBaseUrl } from "./constants.ts";
 import { getKimiProviderHeaders } from "./device.ts";
+import { getKimiMembershipLevelOverride } from "./models.ts";
 import { readStoredOAuthCredential, refreshKimiAuthToken } from "./oauth.ts";
 
 const MEMBERSHIP_LEVEL_NAMES: Record<string, string> = {
@@ -247,10 +248,12 @@ export function parseMembershipLevel(record: Record<string, unknown>): string | 
 }
 
 export function parseMembership(record: Record<string, unknown>): string | null {
-  const level = parseMembershipLevel(record);
+  const override = getKimiMembershipLevelOverride();
+  const level = override ?? parseMembershipLevel(record);
   if (!level) return null;
   const name = MEMBERSHIP_LEVEL_NAMES[level];
-  return name ? `Membership: ${name} (${level})` : `Membership: ${level}`;
+  const label = name ? `${name} (${level})` : level;
+  return override ? `Membership: ${label} — set by KIMI_MEMBERSHIP_LEVEL` : `Membership: ${label}`;
 }
 
 export function formatUsageRow(row: UsageRow, options: UsageFormatOptions = {}): string {
@@ -354,11 +357,12 @@ function fetchKimiUsage(token: string, signal: AbortSignal): Promise<Response> {
 export async function fetchKimiUsageSnapshot(
   options: { timeoutMs?: number; token?: string; refreshOnUnauthorized?: boolean } = {},
 ): Promise<KimiUsageSnapshot> {
+  const membershipOverride = getKimiMembershipLevelOverride();
   const token = options.token ?? getKimiUsageToken();
   if (!token) {
     return {
       summary: "Usage: missing credentials. Run /login kimi-coding.",
-      membershipLevel: null,
+      membershipLevel: membershipOverride,
     };
   }
 
@@ -371,17 +375,21 @@ export async function fetchKimiUsageSnapshot(
       if (refreshed) response = await fetchKimiUsage(refreshed, controller.signal);
     }
     if (!response.ok) {
-      return { summary: `Usage: fetch failed (${response.status})`, membershipLevel: null };
+      return {
+        summary: `Usage: fetch failed (${response.status})`,
+        membershipLevel: membershipOverride,
+      };
     }
     const payload = (await response.json()) as unknown;
     const membershipLevel =
-      typeof payload === "object" && payload !== null && !Array.isArray(payload)
+      membershipOverride ??
+      (typeof payload === "object" && payload !== null && !Array.isArray(payload)
         ? parseMembershipLevel(payload as Record<string, unknown>)
-        : null;
+        : null);
     return { summary: parseUsageSummary(payload), membershipLevel };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { summary: `Usage: fetch failed (${message})`, membershipLevel: null };
+    return { summary: `Usage: fetch failed (${message})`, membershipLevel: membershipOverride };
   } finally {
     clearTimeout(timeout);
   }
